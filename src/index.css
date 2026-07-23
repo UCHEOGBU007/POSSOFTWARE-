@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-pos-bg: var(--pos-bg);
+  --color-pos-sidebar: var(--pos-sidebar);
+  --color-pos-card: var(--pos-card);
+  --color-pos-hover: var(--pos-hover);
+  --color-pos-input: var(--pos-input);
+  --color-pos-border: var(--pos-border);
+  --color-pos-text: var(--pos-text);
+  --color-pos-muted: var(--pos-muted);
+}
+
+:root {
+  --pos-bg: #0b0f1a;
+  --pos-sidebar: #0f1624;
+  --pos-card: #141b2d;
+  --pos-hover: #1a2338;
+  --pos-input: #111827;
+  --pos-border: #1e2a42;
+  --pos-text: #e2e8f0;
+  --pos-muted: #6b7fa3;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --pos-bg: #f6f8fc;
+  --pos-sidebar: #ffffff;
+  --pos-card: #ffffff;
+  --pos-hover: #eef2ff;
+  --pos-input: #f8fafc;
+  --pos-border: #dbe3f0;
+  --pos-text: #0f172a;
+  --pos-muted: #64748b;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--pos-bg);
+  color: var(--pos-text);
+  font-family:
+    "Inter",
+    "Geist",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pos-border);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pos-muted);
+}
+
+select option {
+  background-color: var(--pos-card);
+  color: var(--pos-text);
+}
+
+@keyframes slide-in-from-right-4 {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-in {
+  animation: slide-in-from-right-4 0.3s ease-out;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+    color: black;
+  }
+}
