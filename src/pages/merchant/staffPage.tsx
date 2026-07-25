@@ -22,6 +22,9 @@ import { syncRecord } from "@/lib/sync";
 import { generateId, formatDateShort } from "@/utils/helpers";
 import type { Outlet, Staff } from "@/types";
 
+/**
+ * Form state layout for creating and editing staff members
+ */
 interface StaffForm {
   name: string;
   email: string;
@@ -32,6 +35,9 @@ interface StaffForm {
   role: "cashier" | "manager";
 }
 
+/**
+ * Initial empty state defaults for staff creation form
+ */
 const defaultForm: StaffForm = {
   name: "",
   email: "",
@@ -42,11 +48,17 @@ const defaultForm: StaffForm = {
   role: "cashier",
 };
 
+/**
+ * Staff Management Component
+ * Allows merchants to add, edit, deactivate, and delete staff/cashiers
+ * and assign them to specific store outlets.
+ */
 export default function StaffPage() {
   const { merchantSession } = useAuth();
   const merchant = merchantSession?.merchant;
   const { success, error: showError } = useToast();
 
+  // Local state for staff list, outlet dropdowns, and modal controls
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -55,17 +67,21 @@ export default function StaffPage() {
   const [showPin, setShowPin] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  /**
+   * Fetches all outlets for the current merchant and loads corresponding
+   * staff records from IndexedDB.
+   */
   const loadData = async () => {
     if (!merchant?.id) return;
 
-    // Load Outlets first
+    // Fetch outlets owned by active merchant
     const outs = await db.outlets
       .where("merchantId")
       .equals(merchant.id)
       .toArray();
     setOutlets(outs);
 
-    // Load Staff across all merchant outlets
+    // Fetch staff records associated with retrieved outlets
     const outletIds = outs.map((o) => o.id);
     if (outletIds.length > 0) {
       const staffMembers = await db.staff
@@ -78,10 +94,12 @@ export default function StaffPage() {
     }
   };
 
+  // Re-fetch staff and outlet data whenever merchant ID changes
   useEffect(() => {
     loadData();
   }, [merchant?.id]);
 
+  // Render fallback loading state if merchant session is unavailable
   if (!merchant) {
     return (
       <div className="p-8 text-center text-pos-muted">
@@ -90,6 +108,9 @@ export default function StaffPage() {
     );
   }
 
+  /**
+   * Opens the creation modal and pre-selects the first outlet if available
+   */
   const openCreate = () => {
     setEditingStaff(null);
     setForm({
@@ -99,13 +120,16 @@ export default function StaffPage() {
     setShowModal(true);
   };
 
+  /**
+   * Opens the edit modal prepopulated with existing staff record data
+   */
   const openEdit = (staff: Staff) => {
     setEditingStaff(staff);
     setForm({
       name: staff.name,
       email: staff.email,
       phone: staff.phone ?? "",
-      pin: "",
+      pin: "", // Keep PIN fields empty by default during edit
       confirmPin: "",
       outletId: staff.outletId,
       role: staff.role as "cashier" | "manager",
@@ -113,17 +137,23 @@ export default function StaffPage() {
     setShowModal(true);
   };
 
+  /**
+   * Validates form input and persists staff data (create or update) to local DB and server sync
+   */
   const handleSave = async () => {
+    // Basic requirement check
     if (!form.name.trim() || !form.email.trim() || !form.outletId) {
       showError("Name, email, and outlet assignment are required.");
       return;
     }
 
+    // Require valid PIN during initial creation
     if (!editingStaff && (!form.pin || form.pin.length < 4)) {
       showError("Terminal Login PIN must be 4 to 6 digits.");
       return;
     }
 
+    // Ensure PIN confirmation matches if a PIN value was entered
     if (form.pin && form.pin !== form.confirmPin) {
       showError("PINs do not match.");
       return;
@@ -134,7 +164,7 @@ export default function StaffPage() {
       const now = new Date().toISOString();
 
       if (editingStaff) {
-        // UPDATE STAFF
+        // Prepare patch updates for existing staff
         const updates: Partial<Staff> & Record<string, any> = {
           name: form.name.trim(),
           email: form.email.trim().toLowerCase(),
@@ -145,8 +175,9 @@ export default function StaffPage() {
           syncStatus: "pending",
         };
 
+        // Update PIN only if user provided a new one
         if (form.pin) {
-          updates.pin = form.pin; // Stored for terminal keypad check
+          updates.pin = form.pin;
         }
 
         await db.staff.update(editingStaff.id, updates);
@@ -155,7 +186,7 @@ export default function StaffPage() {
 
         success("Staff details updated.");
       } else {
-        // CREATE NEW STAFF
+        // Construct new staff record payload
         const newStaffId = generateId();
 
         const staffMember: Staff & Record<string, any> = {
@@ -172,10 +203,7 @@ export default function StaffPage() {
           syncStatus: "pending",
         };
 
-        // 1. Local Dexie DB
         await db.staff.add(staffMember as Staff);
-
-        // 2. Cloud Supabase Sync
         await syncRecord("staff", staffMember);
 
         success(`Staff member "${form.name}" created and assigned!`);
@@ -190,6 +218,9 @@ export default function StaffPage() {
     }
   };
 
+  /**
+   * Toggles active status for the target staff member
+   */
   const toggleActive = async (staff: Staff) => {
     const updatedStatus = !staff.isActive;
     const now = new Date().toISOString();
@@ -207,6 +238,9 @@ export default function StaffPage() {
     loadData();
   };
 
+  /**
+   * Removes staff member from local DB and triggers backend deletion sync
+   */
   const deleteStaff = async (staff: Staff) => {
     if (!confirm(`Delete staff member "${staff.name}"?`)) return;
 
@@ -218,36 +252,48 @@ export default function StaffPage() {
 
   return (
     <div>
+      {/* Header section with dynamic action button based on outlet availability */}
       <Header
         title="Staff & Cashiers"
         subtitle={`Manage cashier terminal access and branch assignments`}
         actions={
           outlets.length > 0 ? (
-            <Button icon={<Plus size={16} />} onClick={openCreate}>
+            <Button
+              icon={<Plus size={16} />}
+              onClick={openCreate}
+              className="w-full sm:w-auto"
+            >
               Add New Staff
             </Button>
           ) : (
-            <Button variant="secondary" disabled title="Create an outlet first">
+            <Button
+              variant="secondary"
+              disabled
+              title="Create an outlet first"
+              className="w-full sm:w-auto"
+            >
               Create Outlet First
             </Button>
           )
         }
       />
 
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
+        {/* State 1: Prompt user to create an outlet first if none exist */}
         {outlets.length === 0 ? (
-          <div className="p-8 text-center bg-pos-card border border-pos-border rounded-xl">
-            <p className="text-pos-muted text-sm mb-3">
+          <div className="p-6 sm:p-8 text-center bg-pos-card border border-pos-border rounded-xl">
+            <p className="text-pos-muted text-sm">
               You must create at least one outlet before assigning cashiers.
             </p>
           </div>
         ) : staffList.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
+          /* State 2: Empty staff list state */
+          <div className="flex flex-col items-center justify-center py-16 sm:py-20 text-center px-4">
             <Users size={48} className="text-pos-muted mb-4 opacity-40" />
             <h3 className="text-pos-text font-semibold mb-2">
               No staff members yet
             </h3>
-            <p className="text-sm text-pos-muted mb-6">
+            <p className="text-sm text-pos-muted mb-6 max-w-sm">
               Add cashiers and managers to enable terminal logins on your POS
               devices.
             </p>
@@ -256,8 +302,10 @@ export default function StaffPage() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          /* State 3: Staff card directory listing */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {staffList.map((staff) => {
+              // Map assigned outlet entity for name display
               const assignedOutlet = outlets.find(
                 (o) => o.id === staff.outletId,
               );
@@ -265,48 +313,58 @@ export default function StaffPage() {
               return (
                 <div
                   key={staff.id}
-                  className="bg-pos-card border border-pos-border rounded-xl p-5 space-y-4"
+                  className="bg-pos-card border border-pos-border rounded-xl p-4 sm:p-5 space-y-4 flex flex-col justify-between"
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-violet-600/15 flex items-center justify-center">
-                        <UserCheck size={18} className="text-violet-400" />
+                  <div className="space-y-4">
+                    {/* Staff avatar, name, email & active badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-violet-600/15 flex items-center justify-center shrink-0">
+                          <UserCheck size={18} className="text-violet-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-pos-text truncate">
+                            {staff.name}
+                          </p>
+                          <p className="text-xs text-pos-muted truncate">
+                            {staff.email}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold text-pos-text">
-                          {staff.name}
-                        </p>
-                        <p className="text-xs text-pos-muted truncate max-w-40">
-                          {staff.email}
-                        </p>
+                      <div className="shrink-0">
+                        <Badge
+                          variant={staff.isActive ? "success" : "muted"}
+                          dot
+                        >
+                          {staff.isActive ? "Active" : "Inactive"}
+                        </Badge>
                       </div>
                     </div>
-                    <Badge variant={staff.isActive ? "success" : "muted"} dot>
-                      {staff.isActive ? "Active" : "Inactive"}
-                    </Badge>
+
+                    {/* Metadata summary box */}
+                    <div className="bg-pos-bg rounded-lg p-3 space-y-1 border border-pos-border/40 text-xs">
+                      <div className="flex justify-between text-pos-muted gap-2">
+                        <span>Assigned Branch:</span>
+                        <span className="font-medium text-pos-text truncate">
+                          {assignedOutlet ? assignedOutlet.name : "Unassigned"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-pos-muted gap-2">
+                        <span>Role:</span>
+                        <span className="font-medium text-pos-text capitalize">
+                          {staff.role}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-pos-muted">
+                      Added {formatDateShort(staff.createdAt)}
+                      {staff.phone && ` · ${staff.phone}`}
+                    </p>
                   </div>
 
-                  <div className="bg-pos-bg rounded-lg p-3 space-y-1 border border-pos-border/40 text-xs">
-                    <div className="flex justify-between text-pos-muted">
-                      <span>Assigned Branch:</span>
-                      <span className="font-medium text-pos-text">
-                        {assignedOutlet ? assignedOutlet.name : "Unassigned"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-pos-muted">
-                      <span>Role:</span>
-                      <span className="font-medium text-pos-text capitalize">
-                        {staff.role}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-pos-muted">
-                    Added {formatDateShort(staff.createdAt)}
-                    {staff.phone && ` · ${staff.phone}`}
-                  </p>
-
-                  <div className="flex gap-2 pt-1">
+                  {/* Action toolbar for individual staff card */}
+                  <div className="flex gap-2 pt-2 border-t border-pos-border/40">
                     <Button
                       size="xs"
                       variant="outline"
@@ -345,18 +403,26 @@ export default function StaffPage() {
         )}
       </div>
 
-      {/* CREATE / EDIT MODAL */}
+      {/* Staff Create / Edit Modal Dialog */}
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
         title={editingStaff ? "Edit Staff Details" : "Add New Staff / Cashier"}
         size="md"
         footer={
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={() => setShowModal(false)}>
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 justify-end w-full">
+            <Button
+              variant="outline"
+              onClick={() => setShowModal(false)}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} loading={saving}>
+            <Button
+              onClick={handleSave}
+              loading={saving}
+              className="w-full sm:w-auto"
+            >
               {editingStaff ? "Save Changes" : "Create Staff"}
             </Button>
           </div>
@@ -371,7 +437,7 @@ export default function StaffPage() {
             required
           />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Email Address"
               type="email"
@@ -389,6 +455,7 @@ export default function StaffPage() {
             />
           </div>
 
+          {/* Branch Outlet Dropdown Selection */}
           <div>
             <label className="text-xs font-medium text-pos-muted mb-1 block">
               Assign to Branch Outlet *
@@ -407,6 +474,7 @@ export default function StaffPage() {
             </select>
           </div>
 
+          {/* Role Selection */}
           <div>
             <label className="text-xs font-medium text-pos-muted mb-1 block">
               Role
@@ -426,7 +494,8 @@ export default function StaffPage() {
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Terminal Login PIN Entry & Confirmation */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label={
                 editingStaff
@@ -439,7 +508,7 @@ export default function StaffPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  pin: e.target.value.replace(/\D/g, "").slice(0, 6),
+                  pin: e.target.value.replace(/\D/g, "").slice(0, 6), // Sanitize numeric input only up to 6 digits
                 })
               }
               rightIcon={
@@ -460,7 +529,7 @@ export default function StaffPage() {
               onChange={(e) =>
                 setForm({
                   ...form,
-                  confirmPin: e.target.value.replace(/\D/g, "").slice(0, 6),
+                  confirmPin: e.target.value.replace(/\D/g, "").slice(0, 6), // Sanitize numeric input only up to 6 digits
                 })
               }
             />

@@ -60,23 +60,27 @@ export default function OutletDashboard() {
   const todayRevenue = todaySales.reduce((s, r) => s + r.total, 0);
 
   return (
-    <div>
+    <div className="w-full min-w-0 overflow-x-hidden ">
       <Header
         title={outlet.name}
         subtitle={outlet.address}
         actions={
-          <Link to="/outlet/pos">
-            <Button icon={<ShoppingCart size={16} />} size="sm">
+          <Link to="/outlet/pos" className="w-full sm:w-auto">
+            <Button
+              size="sm"
+              icon={<ShoppingCart size={16} />}
+              className="w-full sm:w-auto justify-center"
+            >
               New Sale
             </Button>
           </Link>
         }
       />
-      <div className="p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-full">
         {lowStockProducts.length > 0 && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
-            <AlertCircle size={18} className="shrink-0" />
-            <p>
+          <div className="flex items-start sm:items-center gap-2.5 p-3 sm:p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs sm:text-sm">
+            <AlertCircle size={18} className="shrink-0 mt-0.5 sm:mt-0" />
+            <p className="wrap-break-word">
               <strong>
                 {lowStockProducts.length} product
                 {lowStockProducts.length > 1 ? "s" : ""}
@@ -90,7 +94,8 @@ export default function OutletDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 1 column on mobile, 2 on tablet, 4 on desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
             label="Today's Revenue"
             value={formatCurrency(todayRevenue)}
@@ -117,15 +122,16 @@ export default function OutletDashboard() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-pos-card border border-pos-border rounded-xl">
-            <div className="px-6 py-4 border-b border-pos-border">
-              <h3 className="font-semibold text-pos-text">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {/* Today's Transactions */}
+          <div className="bg-pos-card border border-pos-border rounded-xl min-w-0">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-pos-border">
+              <h3 className="font-semibold text-pos-text text-sm sm:text-base">
                 Today's Transactions
               </h3>
             </div>
             {todaySales.length === 0 ? (
-              <div className="py-12 text-center text-pos-muted text-sm">
+              <div className="py-8 sm:py-12 text-center text-pos-muted text-xs sm:text-sm px-4">
                 No sales today.
                 <div className="mt-3">
                   <Link to="/outlet/pos">
@@ -140,20 +146,20 @@ export default function OutletDashboard() {
                 {todaySales.map((sale) => (
                   <div
                     key={sale.id}
-                    className="px-6 py-3.5 flex items-center justify-between"
+                    className="px-4 sm:px-6 py-3 flex flex-row items-center justify-between gap-2 min-w-0"
                   >
-                    <div>
-                      <p className="text-sm font-medium text-pos-text">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm font-medium text-pos-text truncate">
                         {sale.receiptNumber}
                       </p>
-                      <p className="text-xs text-pos-muted">
+                      <p className="text-[11px] sm:text-xs text-pos-muted truncate">
                         {sale.items.length} item
                         {sale.items.length !== 1 ? "s" : ""} ·{" "}
                         {sale.paymentMethod.toUpperCase()} ·{" "}
                         {formatDateShort(sale.createdAt)}
                       </p>
                     </div>
-                    <p className="text-sm font-semibold text-emerald-400">
+                    <p className="text-xs sm:text-sm font-semibold text-emerald-400 shrink-0">
                       {formatCurrency(sale.total)}
                     </p>
                   </div>
@@ -162,12 +168,15 @@ export default function OutletDashboard() {
             )}
           </div>
 
-          <div className="bg-pos-card border border-pos-border rounded-xl">
-            <div className="px-6 py-4 border-b border-pos-border">
-              <h3 className="font-semibold text-pos-text">Low Stock Alerts</h3>
+          {/* Low Stock Alerts */}
+          <div className="bg-pos-card border border-pos-border rounded-xl min-w-0">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-pos-border">
+              <h3 className="font-semibold text-pos-text text-sm sm:text-base">
+                Low Stock Alerts
+              </h3>
             </div>
             {lowStockProducts.length === 0 ? (
-              <div className="py-12 text-center text-pos-muted text-sm">
+              <div className="py-8 sm:py-12 text-center text-pos-muted text-xs sm:text-sm px-4">
                 All products well stocked.
               </div>
             ) : (
@@ -175,19 +184,23 @@ export default function OutletDashboard() {
                 {lowStockProducts.map((p) => (
                   <div
                     key={p.id}
-                    className="px-6 py-3.5 flex items-center justify-between"
+                    className="px-4 sm:px-6 py-3 flex flex-row items-center justify-between gap-2 min-w-0"
                   >
-                    <div>
-                      <p className="text-sm font-medium text-pos-text">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm font-medium text-pos-text truncate">
                         {p.name}
                       </p>
-                      <p className="text-xs text-pos-muted">{p.sku}</p>
+                      <p className="text-[11px] sm:text-xs text-pos-muted truncate">
+                        {p.sku}
+                      </p>
                     </div>
-                    <Badge variant={p.stock === 0 ? "danger" : "warning"} dot>
-                      {p.stock === 0
-                        ? "Out of stock"
-                        : `${p.stock} ${p.unit} left`}
-                    </Badge>
+                    <div className="shrink-0">
+                      <Badge variant={p.stock === 0 ? "danger" : "warning"} dot>
+                        {p.stock === 0
+                          ? "Out of stock"
+                          : `${p.stock} ${p.unit} left`}
+                      </Badge>
+                    </div>
                   </div>
                 ))}
               </div>

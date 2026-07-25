@@ -2,15 +2,25 @@ import { useState } from "react";
 import { Save, User, Building2, Phone, Mail, Percent } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import Header from "@/components/layout/Header";
-import Button from "@/components/ui/Button.tsx";
-import Input from "@/components/ui/Input.tsx";
-import Select from "@/components/ui/Select.tsx";
-import { useToast } from "@/components/ui/Toast.tsx";
+import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import Select from "@/components/ui/Select";
+import { useToast } from "@/components/ui/Toast";
 
+/**
+ * MerchantSettings Component
+ * Allows merchants to view and update their core profile details, 
+ * default tax rates, and base currency configuration.
+ */
 export default function MerchantSettings() {
+  // Context hooks for merchant session data, update handlers, and toast notifications
   const { merchantSession, updateMerchant } = useAuth();
   const { success, error: showError } = useToast();
+
+  // Safely extract active merchant metadata from session
   const merchant = merchantSession!.merchant;
+
+  // Local state initialized with current merchant profile settings
   const [form, setForm] = useState({
     businessName: merchant.businessName,
     ownerName: merchant.ownerName,
@@ -18,22 +28,32 @@ export default function MerchantSettings() {
     phone: merchant.phone,
     address: merchant.address ?? "",
     currency: merchant.currency,
-    taxRate: merchant.taxRate.toString(),
+    taxRate: merchant.taxRate.toString(), // Convert numeric tax rate to string for input handling
   });
+
+  // Track async saving state to manage button loading status
   const [saving, setSaving] = useState(false);
 
+  /**
+   * Validates form inputs and updates merchant configuration on backend.
+   */
   const handleSave = async () => {
+    // Basic validation for mandatory profile fields
     if (!form.businessName || !form.ownerName || !form.email) {
       showError("Business name, owner name and email are required.");
       return;
     }
+
+    // Tax rate validation (must be a valid percentage between 0 and 100)
     const taxRate = parseFloat(form.taxRate);
     if (isNaN(taxRate) || taxRate < 0 || taxRate > 100) {
       showError("Tax rate must be between 0 and 100.");
       return;
     }
+
     setSaving(true);
     try {
+      // Persist updated merchant details via context provider action
       await updateMerchant({ ...form, taxRate });
       success("Settings saved successfully.");
     } catch (err: any) {
@@ -46,10 +66,14 @@ export default function MerchantSettings() {
   return (
     <div>
       <Header title="Settings" subtitle="Manage your business profile" />
-      <div className="p-6 max-w-2xl space-y-6">
-        <div className="bg-pos-card border border-pos-border rounded-xl p-6 space-y-4">
-          <h3 className="font-semibold text-pos-text">Business Profile</h3>
-          <div className="grid grid-cols-2 gap-4">
+      <div className="p-4 sm:p-6 max-w-2xl space-y-6">
+        
+        {/* SECTION: Business Profile Info */}
+        <div className="bg-pos-card border border-pos-border rounded-xl p-4 sm:p-6 space-y-4">
+          <h3 className="font-semibold text-pos-text text-base sm:text-lg">
+            Business Profile
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Business Name"
               value={form.businessName}
@@ -65,7 +89,7 @@ export default function MerchantSettings() {
               leftIcon={<User size={15} />}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Email"
               type="email"
@@ -87,9 +111,12 @@ export default function MerchantSettings() {
           />
         </div>
 
-        <div className="bg-pos-card border border-pos-border rounded-xl p-6 space-y-4">
-          <h3 className="font-semibold text-pos-text">Tax & Currency</h3>
-          <div className="grid grid-cols-2 gap-4">
+        {/* SECTION: Regional Tax & Currency Configuration */}
+        <div className="bg-pos-card border border-pos-border rounded-xl p-4 sm:p-6 space-y-4">
+          <h3 className="font-semibold text-pos-text text-base sm:text-lg">
+            Tax & Currency
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select
               label="Currency"
               value={form.currency}
@@ -115,14 +142,18 @@ export default function MerchantSettings() {
           </div>
         </div>
 
-        <Button
-          onClick={handleSave}
-          loading={saving}
-          icon={<Save size={16} />}
-          size="lg"
-        >
-          Save Settings
-        </Button>
+        {/* SECTION: Submit Action */}
+        <div className="flex justify-start">
+          <Button
+            onClick={handleSave}
+            loading={saving}
+            icon={<Save size={16} />}
+            size="lg"
+            className="w-full sm:w-auto"
+          >
+            Save Settings
+          </Button>
+        </div>
       </div>
     </div>
   );

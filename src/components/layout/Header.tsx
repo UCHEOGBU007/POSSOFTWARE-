@@ -15,14 +15,19 @@ export default function Header({ title, subtitle, actions }: HeaderProps) {
     const offline = () => setIsOnline(false);
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
-    return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offline); };
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    };
   }, []);
 
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-pos-border bg-pos-bg sticky top-0 z-10">
       <div>
         <h1 className="text-lg font-semibold text-pos-text">{title}</h1>
-        {subtitle && <p className="text-xs text-pos-muted mt-0.5">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-xs text-pos-muted mt-0.5">{subtitle}</p>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <div
