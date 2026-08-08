@@ -88,6 +88,23 @@ export default function POSTerminal() {
 
   const handleCheckout = async () => {
     if (pos.cart.length === 0) return;
+
+    const stockErrors = pos.cart
+      .map((item) => {
+        const product = products.find((p) => p.id === item.productId);
+        if (!product) return `Product ${item.productName} is unavailable.`;
+        if (product.trackStock && item.qty > product.stock) {
+          return `${item.productName} only has ${product.stock} ${product.unit} left.`;
+        }
+        return null;
+      })
+      .filter(Boolean) as string[];
+
+    if (stockErrors.length > 0) {
+      showError(stockErrors[0]);
+      return;
+    }
+
     const paid =
       payMethod === "cash" ? parseFloat(amountPaid || "0") : pos.cartTotal;
     if (payMethod === "cash" && paid < pos.cartTotal) {
@@ -191,7 +208,17 @@ export default function POSTerminal() {
                   <button
                     key={p.id}
                     disabled={outOfStock}
-                    onClick={() => pos.addToCart(p)}
+                    onClick={() => {
+                      if (outOfStock) return;
+                      if (p.trackStock) {
+                        const currentQty = inCart?.qty ?? 0;
+                        if (currentQty + 1 > p.stock) {
+                          showError("Cannot add more items than are in stock.");
+                          return;
+                        }
+                      }
+                      pos.addToCart(p);
+                    }}
                     className={clsx(
                       "text-left p-3 rounded-xl border transition-all duration-150 group",
                       outOfStock
@@ -513,10 +540,9 @@ export default function POSTerminal() {
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
                 <ShoppingCart size={22} className="text-emerald-400" />
               </div>
-              <p className="font-bold text-pos-text text-lg">
-                Payment Received
-              </p>
-              <p className="text-xs text-pos-muted font-mono">
+              <p className="font-bold text-pos-text text-lg">{outlet.name}</p>
+              <p className="text-sm text-pos-muted">Sale Receipt</p>
+              <p className="text-xs text-pos-muted font-mono mt-1">
                 {pos.lastSale.receiptNumber}
               </p>
             </div>

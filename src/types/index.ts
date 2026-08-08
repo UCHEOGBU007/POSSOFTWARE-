@@ -28,9 +28,11 @@ export interface Merchant {
 export interface Outlet {
   id: string;
   merchantId: string;
+  outletCode?: string;
   name: string;
   address: string;
   phone?: string;
+  currency?: string;
   pin: string;
   isActive: boolean;
   taxEnabled: boolean;
@@ -127,6 +129,7 @@ export interface Staff {
   role: StaffRole;
   isActive: boolean;
   createdAt: string;
+  updatedAt: string;
   syncStatus: SyncStatus;
 }
 

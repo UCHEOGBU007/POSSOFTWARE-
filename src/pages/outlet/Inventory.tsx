@@ -258,7 +258,7 @@ export default function InventoryPage() {
         }
       />
       <div className="p-6 space-y-4">
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Input
             placeholder="Search products..."
             value={search}
@@ -291,8 +291,8 @@ export default function InventoryPage() {
             </Button>
           </div>
         ) : (
-          <div className="bg-pos-card border border-pos-border rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-pos-card border border-pos-border rounded-xl overflow-x-auto">
+            <table className="w-full min-w-200 text-sm">
               <thead>
                 <tr className="border-b border-pos-border">
                   {[
@@ -421,7 +421,7 @@ export default function InventoryPage() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Product Name"
               placeholder="Rice (50kg)"
@@ -439,7 +439,7 @@ export default function InventoryPage() {
               required
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Barcode (optional)"
               placeholder="1234567890"
@@ -473,7 +473,7 @@ export default function InventoryPage() {
               onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
             />
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Input
               label="Unit"
               placeholder="pcs, kg, bag"

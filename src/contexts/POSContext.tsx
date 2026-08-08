@@ -15,6 +15,7 @@ import type {
 } from "../types";
 import { db } from "../db/database";
 import { syncRecord } from "../lib/sync";
+import { getSupabaseConfigStatus, supabase } from "../lib/supabase";
 import { generateId, generateReceiptNumber } from "../utils/helpers";
 
 interface POSContextType {
@@ -58,6 +59,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
   const [lastSale, setLastSale] = useState<Sale | null>(null);
 
   const addToCart = useCallback((product: Product) => {
+    if (!product.isActive || (product.trackStock && product.stock <= 0)) return;
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === product.id);
       if (existing) {
@@ -95,13 +97,18 @@ export function POSProvider({ children }: { children: ReactNode }) {
       setCart((prev) => prev.filter((i) => i.productId !== productId));
       return;
     }
-    setCart((prev) =>
-      prev.map((i) =>
+    setCart((prev) => {
+      const item = prev.find((entry) => entry.productId === productId);
+      if (!item) return prev;
+      // The terminal performs the authoritative stock check at checkout; this
+      // only prevents malformed or non-integer cart values in the UI.
+      const safeQty = Math.max(1, Math.floor(qty));
+      return prev.map((i) =>
         i.productId === productId
-          ? { ...i, qty, total: qty * i.unitPrice * (1 - i.discount / 100) }
+          ? { ...i, qty: safeQty, total: safeQty * i.unitPrice * (1 - i.discount / 100) }
           : i,
-      ),
-    );
+      );
+    });
   }, []);
 
   const updateItemDiscount = useCallback(
@@ -147,6 +154,15 @@ export function POSProvider({ children }: { children: ReactNode }) {
     staffName?: string,
     note?: string,
   ): Promise<Sale> => {
+    if (!cart.length) throw new Error("Your cart is empty.");
+    if (!Number.isFinite(amountPaid) || amountPaid < cartTotal) {
+      throw new Error("Amount paid is invalid.");
+    }
+    for (const item of cart) {
+      if (!Number.isInteger(item.qty) || item.qty < 1) {
+        throw new Error("Cart quantities must be whole numbers.");
+      }
+    }
     const now = new Date().toISOString();
     const sale: Sale = {
       id: generateId(),
@@ -170,6 +186,38 @@ export function POSProvider({ children }: { children: ReactNode }) {
       syncStatus: "pending",
     };
 
+    const { isConfigured } = getSupabaseConfigStatus();
+    if (isConfigured) {
+      // The database function locks product rows, recalculates totals from
+      // database prices and refuses insufficient stock. Never trust client
+      // price, tax or stock values for a production sale.
+      const { data, error } = await supabase.rpc("record_sale", {
+        p_outlet_id: outletId,
+        p_items: cart.map(({ productId, qty, discount }) => ({
+          product_id: productId,
+          quantity: qty,
+          discount_percent: discount,
+        })),
+        p_payment_method: paymentMethod,
+        p_amount_paid: amountPaid,
+        p_customer_id: selectedCustomer?.id ?? null,
+        p_note: note?.slice(0, 500) ?? null,
+      });
+      if (error) throw new Error(error.message);
+      const cloudSale = Array.isArray(data) ? data[0] : data;
+      if (!cloudSale?.id) throw new Error("Sale was not confirmed by the server.");
+      sale.id = cloudSale.id;
+      sale.receiptNumber = cloudSale.receipt_number;
+      sale.subtotal = Number(cloudSale.subtotal);
+      sale.taxAmount = Number(cloudSale.tax_amount);
+      sale.discountAmount = Number(cloudSale.discount_amount);
+      sale.total = Number(cloudSale.total);
+      sale.amountPaid = Number(cloudSale.amount_paid);
+      sale.change = Number(cloudSale.change);
+      sale.createdAt = cloudSale.created_at;
+      sale.syncStatus = "synced";
+    }
+
     await db.transaction(
       "rw",
       db.sales,
@@ -177,12 +225,15 @@ export function POSProvider({ children }: { children: ReactNode }) {
       db.stockMovements,
       db.customers,
       async () => {
-        await db.sales.add(sale);
-        await syncRecord("sales", sale);
+        await db.sales.put(sale);
+        if (!isConfigured) await syncRecord("sales", sale);
 
         for (const item of cart) {
           const product = await db.products.get(item.productId);
           if (product && product.trackStock) {
+            if (item.qty > product.stock) {
+              throw new Error(`${product.name} is out of stock or changed while checking out.`);
+            }
             const newStock = product.stock - item.qty;
             await db.products.update(item.productId, {
               stock: newStock,
@@ -190,7 +241,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
               syncStatus: "pending",
             });
             const updatedProduct = await db.products.get(item.productId);
-            if (updatedProduct) {
+            if (updatedProduct && !isConfigured) {
               await syncRecord("products", updatedProduct);
             }
             const stockMovement: StockMovement = {
@@ -207,7 +258,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
               syncStatus: "pending",
             };
             await db.stockMovements.add(stockMovement);
-            await syncRecord("stockMovements", stockMovement);
+            if (!isConfigured) await syncRecord("stockMovements", stockMovement);
           }
         }
 
@@ -221,7 +272,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
             syncStatus: "pending",
           });
           const updatedCustomer = await db.customers.get(selectedCustomer.id);
-          if (updatedCustomer) {
+          if (updatedCustomer && !isConfigured) {
             await syncRecord("customers", updatedCustomer);
           }
         }

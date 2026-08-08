@@ -36,3 +36,5 @@ vite.config.ts.timestamp-*.mjs
 # Package lock files (keep one, ignore the rest — pnpm preferred)
 package-lock.json
 yarn.lock
+supabase
+supabase_schema.sql

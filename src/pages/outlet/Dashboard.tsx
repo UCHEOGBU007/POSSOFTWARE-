@@ -57,6 +57,7 @@ export default function OutletDashboard() {
     load();
   }, [outlet.id]);
 
+  const outletCurrency = outlet.currency ?? "NGN";
   const todayRevenue = todaySales.reduce((s, r) => s + r.total, 0);
 
   return (
@@ -160,7 +161,7 @@ export default function OutletDashboard() {
                       </p>
                     </div>
                     <p className="text-xs sm:text-sm font-semibold text-emerald-400 shrink-0">
-                      {formatCurrency(sale.total)}
+                      {formatCurrency(sale.total, outletCurrency)}
                     </p>
                   </div>
                 ))}

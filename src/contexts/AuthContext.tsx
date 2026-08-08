@@ -1054,7 +1054,7 @@ import { db } from "../db/database";
 import { supabase, getSupabaseConfigStatus } from "../lib/supabase";
 import type { Merchant, Outlet, Staff } from "../types";
 import { syncPendingData, syncRecord } from "../lib/sync";
-import { generateId, hashPassword, hashPin } from "@/utils/helpers";
+import { generateId } from "@/utils/helpers";
 
 interface MerchantSession {
   merchant: Merchant;
@@ -1117,7 +1117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionStorage.getItem(OUTLET_SESSION_KEY) ||
           localStorage.getItem(OUTLET_SESSION_KEY);
 
-        if (oRaw) {
+        // A browser storage value is not an authentication credential. Never
+        // restore an outlet session from it while Supabase is configured.
+        if (oRaw && !isConfigured) {
           const { outletId, staffId } = JSON.parse(oRaw);
           const outlet = await db.outlets.get(outletId);
           const staff = staffId
@@ -1125,6 +1127,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             : null;
 
           if (outlet && outlet.isActive) {
+            if (!outlet.currency && outlet.merchantId) {
+              const merchant = await db.merchants.get(outlet.merchantId);
+              if (merchant) outlet.currency = merchant.currency;
+            }
             setOutletSession({ outlet, staff });
           }
         }
@@ -1137,7 +1143,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (session?.user) {
             const uid = session.user.id;
-            const merchant = await db.merchants.where("id").equals(uid).first();
+            const { data: cloudStaff } = await supabase
+              .from("staff")
+              .select("*")
+              .eq("id", uid)
+              .eq("is_active", true)
+              .maybeSingle();
+            if (cloudStaff) {
+              const staff = mapSupabaseStaff(cloudStaff);
+              const { data: cloudOutlet } = await supabase
+                .from("outlets")
+                .select("*")
+                .eq("id", staff.outletId)
+                .eq("is_active", true)
+                .maybeSingle();
+              if (cloudOutlet) {
+                const outlet = mapSupabaseOutlet(cloudOutlet);
+                await db.transaction("rw", db.staff, db.outlets, async () => {
+                  await db.staff.put(staff);
+                  await db.outlets.put(outlet);
+                });
+                await hydrateOutletData(outlet.id);
+                setOutletSession({ outlet, staff });
+                setIsLoading(false);
+                await syncPendingData();
+                return;
+              }
+            }
+            let merchant = await db.merchants.where("id").equals(uid).first();
+            if (!merchant) {
+              const { data: cloudMerchant } = await supabase
+                .from("merchants")
+                .select("*")
+                .eq("id", uid)
+                .maybeSingle();
+              if (cloudMerchant) {
+                merchant = mapSupabaseMerchant(cloudMerchant);
+                await db.merchants.put(merchant);
+              }
+            }
 
             if (merchant) {
               setMerchantSession({ merchant });
@@ -1154,7 +1198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // 3. Fallback: Restore Merchant session from sessionStorage
         const mRaw = sessionStorage.getItem(MERCHANT_SESSION_KEY);
-        if (mRaw) {
+        if (mRaw && !isConfigured) {
           const { merchantId } = JSON.parse(mRaw);
           const merchant = await db.merchants.get(merchantId);
           if (merchant) {
@@ -1254,25 +1298,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ).toISOString();
 
     let merchantId = generateId();
-    let passwordHash = "";
+    // Passwords are managed exclusively by Supabase Auth. Never cache a
+    // password hash in Dexie or send it to a public table.
+    const passwordHash = "";
 
     if (isConfigured) {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: normalizedEmail,
         password: data.password,
+        options: {
+          data: {
+            business_name: data.businessName.trim(),
+            owner_name: data.ownerName.trim(),
+            phone: data.phone.trim(),
+            tier: data.tier,
+          },
+        },
       });
 
       if (authError) {
-        console.warn(
-          "Supabase sign-up failed, continuing with local registration",
-          authError,
-        );
-        passwordHash = await hashPassword(data.password);
+        throw new Error(authError.message || "Unable to create your account.");
       } else if (authData.user) {
         merchantId = authData.user.id;
       }
-    } else {
-      passwordHash = await hashPassword(data.password);
     }
 
     const merchant: Merchant = {
@@ -1292,8 +1340,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       syncStatus: "pending",
     };
 
-    await db.merchants.add(merchant);
-    await syncRecord("merchants", merchant);
+    await db.merchants.put(merchant);
+    // In Supabase mode the auth.users trigger creates the tenant record. Do
+    // not race it with a browser upsert, especially when email confirmation
+    // means signUp returns no session yet.
+    if (!isConfigured) await syncRecord("merchants", merchant);
 
     setMerchantSession({ merchant });
     sessionStorage.setItem(
@@ -1333,7 +1384,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<Staff> => {
     const normalizedEmail = email.toLowerCase();
     const now = new Date().toISOString();
-    const staffId = generateId();
+    let staffId = generateId();
+
+    if (isConfigured) {
+      if (pin.length < 12) {
+        throw new Error("Staff password must be at least 12 characters.");
+      }
+      const { data, error } = await supabase.functions.invoke("provision-staff", {
+        body: { outletId, name, email: normalizedEmail, phone, role, initialPassword: pin },
+      });
+      if (error || !data?.id) {
+        const message = error?.message || "Failed to create staff account.";
+        if (/failed to send a request|fetch/i.test(message)) {
+          throw new Error(
+            "Staff provisioning is unavailable. Deploy the 'provision-staff' Supabase Edge Function, then try again.",
+          );
+        }
+        throw new Error(message);
+      }
+      staffId = data.id;
+    }
 
     const staff: Staff = {
       id: staffId,
@@ -1341,15 +1411,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       name,
       email: normalizedEmail,
       phone,
-      pin,
       role,
       isActive: true,
       createdAt: now,
+      updatedAt: now,
       syncStatus: "pending",
     };
 
     await db.staff.add(staff);
-    await syncRecord("staff", staff);
+    // The Edge Function has already created the cloud profile atomically.
+    if (!isConfigured) await syncRecord("staff", staff);
     return staff;
   };
 
@@ -1358,18 +1429,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     pinInput: string,
   ): Promise<OutletSession> => {
     const normalizedEmail = email.toLowerCase();
-    const hashedPinInput = await hashPin(pinInput);
 
-    // 1. Search staff in local Dexie IndexedDB
+    let authUserId: string | null = null;
+
+    if (isConfigured) {
+      // Try regular Supabase auth first
+      const { data: authData, error: authError } =
+        await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password: pinInput,
+        });
+
+      if (!authError && authData.user) authUserId = authData.user.id;
+      else throw new Error("Invalid email or password.");
+    }
+
     let staff = await db.staff.where("email").equals(normalizedEmail).first();
 
-    // 2. Fallback search in Supabase Cloud if missing locally
-    if (!staff && isConfigured) {
-      const { data: cloudStaff } = await supabase
-        .from("staff")
-        .select("*")
-        .eq("email", normalizedEmail)
-        .maybeSingle();
+    if (isConfigured) {
+      // Prefer fetching staff by authenticated user id, fallback to email
+      let cloudStaff: any = null;
+
+      if (authUserId) {
+          const { data } = await supabase
+            .from("staff")
+            .select("*")
+            .eq("id", authUserId)
+            .maybeSingle();
+          cloudStaff = data;
+      }
+      if (!cloudStaff) {
+          const { data } = await supabase
+            .from("staff")
+            .select("*")
+            .eq("email", normalizedEmail)
+            .maybeSingle();
+          cloudStaff = data;
+      }
 
       if (cloudStaff) {
         staff = mapSupabaseStaff(cloudStaff);
@@ -1385,16 +1481,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("This staff profile has been deactivated.");
     }
 
-    // 3. Verify PIN (Check plain text PIN or hashed PIN)
-    const isPinValid = staff.pin === pinInput || staff.pin === hashedPinInput;
+    if (!isConfigured) throw new Error("Supabase must be configured for staff login.");
 
-    if (!isPinValid) {
-      throw new Error("Invalid Staff PIN.");
-    }
-
-    // 4. Resolve outlet
-    const boundOutletId =
-      localStorage.getItem("pos_terminal_outlet_id") || staff.outletId;
+    // The authenticated staff assignment is the only trusted outlet binding.
+    const boundOutletId = staff.outletId;
 
     let outlet = await db.outlets.get(boundOutletId);
 
@@ -1413,7 +1503,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: cloudOutlet.name,
           address: cloudOutlet.address,
           phone: cloudOutlet.phone ?? "",
-          pin: cloudOutlet.pin,
+          pin: "",
+          currency: cloudOutlet.currency || undefined,
           isActive: cloudOutlet.is_active ?? cloudOutlet.isActive ?? true,
           taxEnabled: cloudOutlet.tax_enabled ?? cloudOutlet.taxEnabled ?? true,
           receiptFooter:
@@ -1430,26 +1521,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Assigned outlet is not active or missing.");
     }
 
-    const session: OutletSession = { outlet, staff };
+    await hydrateOutletData(outlet.id);
 
-    // 5. Store session and set state
+    if (!outlet.currency && outlet.merchantId) {
+      const merchant = await db.merchants.get(outlet.merchantId);
+      if (merchant) outlet.currency = merchant.currency;
+    }
+
+    const session: OutletSession = { outlet, staff };
     const sessionPayload = JSON.stringify({
       outletId: outlet.id,
       staffId: staff.id,
     });
 
     sessionStorage.setItem(OUTLET_SESSION_KEY, sessionPayload);
-    localStorage.setItem(OUTLET_SESSION_KEY, sessionPayload);
-
     setOutletSession(session);
 
     return session;
   };
 
   const logoutOutlet = async () => {
+    if (isConfigured) {
+      await supabase.auth.signOut().catch(() => {});
+    }
     setOutletSession(null);
     sessionStorage.removeItem(OUTLET_SESSION_KEY);
-    localStorage.removeItem(OUTLET_SESSION_KEY);
   };
 
   return (
@@ -1510,11 +1606,79 @@ function mapSupabaseStaff(row: Record<string, any>): Staff {
     name: row.name,
     email: row.email,
     phone: row.phone,
-    pin: row.pin,
     role: row.role,
     isActive: row.is_active ?? row.isActive ?? true,
     createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
     syncStatus: "synced",
   };
 }
 
+function mapSupabaseOutlet(row: Record<string, any>): Outlet {
+  return {
+    id: row.id,
+    merchantId: row.merchant_id,
+    outletCode: row.outlet_code,
+    name: row.name,
+    address: row.address,
+    phone: row.phone ?? "",
+    // Pairing secrets are deliberately never returned to the browser.
+    pin: "",
+    currency: row.currency ?? undefined,
+    isActive: row.is_active ?? true,
+    taxEnabled: row.tax_enabled ?? true,
+    receiptFooter: row.receipt_footer ?? "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    syncStatus: "synced",
+  };
+}
+
+/** Load the outlet-scoped offline cache after an authenticated staff login. */
+async function hydrateOutletData(outletId: string) {
+  const [categories, products, customers, sales, expenses, movements] =
+    await Promise.all([
+      supabase.from("categories").select("*").eq("outlet_id", outletId),
+      supabase.from("products").select("*").eq("outlet_id", outletId),
+      supabase.from("customers").select("*").eq("outlet_id", outletId),
+      supabase.from("sales").select("*").eq("outlet_id", outletId),
+      supabase.from("expenses").select("*").eq("outlet_id", outletId),
+      supabase.from("stock_movements").select("*").eq("outlet_id", outletId),
+    ]);
+  const failure = [categories, products, customers, sales, expenses, movements].find((result) => result.error)?.error;
+  if (failure) throw new Error(`Unable to load assigned outlet data: ${failure.message}`);
+
+  await db.transaction(
+    "rw", [db.categories, db.products, db.customers, db.sales, db.expenses, db.stockMovements],
+    async () => {
+      await db.categories.bulkPut((categories.data ?? []).map((row: any) => ({ id: row.id, outletId: row.outlet_id, name: row.name, color: row.color, createdAt: row.created_at, syncStatus: "synced" as const })));
+      await db.products.bulkPut((products.data ?? []).map((row: any) => ({
+        id: row.id, outletId: row.outlet_id, categoryId: row.category_id ?? undefined, name: row.name, sku: row.sku,
+        barcode: row.barcode ?? undefined, description: row.description ?? undefined, price: Number(row.price), costPrice: Number(row.cost_price),
+        stock: Number(row.stock), lowStockAlert: Number(row.low_stock_alert), unit: row.unit, image: row.image ?? undefined,
+        isActive: row.is_active, trackStock: row.track_stock, createdAt: row.created_at, updatedAt: row.updated_at, syncStatus: "synced" as const,
+      })));
+      await db.customers.bulkPut((customers.data ?? []).map((row: any) => ({
+        id: row.id, outletId: row.outlet_id, name: row.name, phone: row.phone, email: row.email ?? undefined, address: row.address ?? undefined,
+        loyaltyPoints: Number(row.loyalty_points), totalSpent: Number(row.total_spent), visitCount: Number(row.visit_count),
+        createdAt: row.created_at, updatedAt: row.updated_at, syncStatus: "synced" as const,
+      })));
+      await db.sales.bulkPut((sales.data ?? []).map((row: any) => ({
+        id: row.id, outletId: row.outlet_id, receiptNumber: row.receipt_number, items: row.items, subtotal: Number(row.subtotal),
+        taxAmount: Number(row.tax_amount), discountAmount: Number(row.discount_amount), total: Number(row.total), amountPaid: Number(row.amount_paid),
+        change: Number(row.change), paymentMethod: row.payment_method, status: row.status, customerId: row.customer_id ?? undefined,
+        customerName: row.customer_name ?? undefined, staffId: row.staff_id ?? undefined, staffName: row.staff_name ?? undefined,
+        note: row.note ?? undefined, createdAt: row.created_at, syncStatus: "synced" as const,
+      })));
+      await db.expenses.bulkPut((expenses.data ?? []).map((row: any) => ({
+        id: row.id, outletId: row.outlet_id, category: row.category, amount: Number(row.amount), description: row.description,
+        date: row.expense_date, staffId: row.staff_id ?? undefined, createdAt: row.created_at, syncStatus: "synced" as const,
+      })));
+      await db.stockMovements.bulkPut((movements.data ?? []).map((row: any) => ({
+        id: row.id, outletId: row.outlet_id, productId: row.product_id, productName: row.product_name, type: row.type,
+        qty: Number(row.qty), prevStock: Number(row.prev_stock), newStock: Number(row.new_stock), note: row.note ?? undefined,
+        saleId: row.sale_id ?? undefined, createdAt: row.created_at, syncStatus: "synced" as const,
+      })));
+    },
+  );
+}

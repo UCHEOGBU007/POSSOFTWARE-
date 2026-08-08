@@ -36,6 +36,8 @@ create table if not exists outlets (
   name            text not null,
   address         text not null,
   phone           text,
+  outlet_code     text unique,
+  currency        text,
   pin             text not null,
   is_active       boolean not null default true,
   tax_enabled     boolean not null default true,
@@ -45,6 +47,7 @@ create table if not exists outlets (
 );
 
 create index if not exists outlets_merchant_id_idx on outlets(merchant_id);
+create index if not exists outlets_outlet_code_idx on outlets(outlet_code);
 
 -- ============================================================
 -- CATEGORIES
@@ -118,7 +121,8 @@ create table if not exists staff (
   pin         text,
   role        text not null check (role in ('manager','cashier')),
   is_active   boolean not null default true,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 -- Migration: add email column to existing staff table (if it doesn't have it yet)
@@ -134,10 +138,18 @@ begin
     alter table staff alter column email set not null;
     alter table staff add constraint staff_email_unique unique (email);
   end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'staff' and column_name = 'updated_at'
+  ) then
+    alter table staff add column updated_at timestamptz not null default now();
+  end if;
 end $$;
 
 create index if not exists staff_outlet_id_idx on staff(outlet_id);
 create index if not exists staff_email_idx on staff(email);
+create index if not exists staff_updated_at_idx on staff(updated_at);
 
 -- ============================================================
 -- SALES
@@ -171,18 +183,18 @@ create index if not exists sales_receipt_number_idx on sales(receipt_number);
 -- EXPENSES
 -- ============================================================
 create table if not exists expenses (
-  id          uuid primary key default gen_random_uuid(),
-  outlet_id   uuid not null references outlets(id) on delete cascade,
-  category    text not null,
-  amount      numeric(12,2) not null,
-  description text not null,
-  date        date not null,
-  staff_id    uuid references staff(id) on delete set null,
-  created_at  timestamptz not null default now()
+  id            uuid primary key default gen_random_uuid(),
+  outlet_id     uuid not null references outlets(id) on delete cascade,
+  category      text not null,
+  amount        numeric(12,2) not null,
+  description   text not null,
+  expense_date  date not null,
+  staff_id      uuid references staff(id) on delete set null,
+  created_at    timestamptz not null default now()
 );
 
 create index if not exists expenses_outlet_id_idx on expenses(outlet_id);
-create index if not exists expenses_date_idx on expenses(date);
+create index if not exists expenses_date_idx on expenses(expense_date);
 
 -- ============================================================
 -- STOCK MOVEMENTS
@@ -285,6 +297,179 @@ as $$
 $$;
 
 -- ============================================================
+-- Secure terminal pairing helpers
+-- ============================================================
+
+create or replace function pair_terminal_outlet(
+  pair_code text,
+  setup_pin_hash text
+)
+returns jsonb
+language sql
+security definer
+stable
+as $$
+  select jsonb_build_object(
+    'outlet', jsonb_build_object(
+      'id', o.id,
+      'merchant_id', o.merchant_id,
+      'outlet_code', o.outlet_code,
+      'name', o.name,
+      'address', o.address,
+      'phone', o.phone,
+      'currency', o.currency,
+      'is_active', o.is_active,
+      'tax_enabled', o.tax_enabled,
+      'receipt_footer', o.receipt_footer,
+      'created_at', o.created_at,
+      'updated_at', o.updated_at
+    ),
+    'staff', coalesce(jsonb_agg(jsonb_build_object(
+      'id', s.id,
+      'outlet_id', s.outlet_id,
+      'name', s.name,
+      'email', s.email,
+      'phone', s.phone,
+      'role', s.role,
+      'is_active', s.is_active,
+      'created_at', s.created_at,
+      'updated_at', s.updated_at
+    )) filter (where s.id is not null), '[]')
+  )
+  from outlets o
+  left join staff s on s.outlet_id = o.id and s.is_active
+  where upper(o.outlet_code) = upper(pair_code)
+    and o.pin = setup_pin_hash
+    and o.is_active
+  group by
+    o.id,
+    o.merchant_id,
+    o.outlet_code,
+    o.name,
+    o.address,
+    o.phone,
+    o.currency,
+    o.pin,
+    o.is_active,
+    o.tax_enabled,
+    o.receipt_footer,
+    o.created_at,
+    o.updated_at;
+$$;
+
+create or replace function fetch_paired_outlet_staff(
+  pair_code text,
+  setup_pin_hash text
+)
+returns jsonb
+language sql
+security definer
+stable
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', s.id,
+    'outlet_id', s.outlet_id,
+    'name', s.name,
+    'email', s.email,
+    'phone', s.phone,
+    'role', s.role,
+    'is_active', s.is_active,
+    'created_at', s.created_at,
+    'updated_at', s.updated_at
+  )), '[]')
+  from outlets o
+  join staff s on s.outlet_id = o.id
+  where upper(o.outlet_code) = upper(pair_code)
+    and o.pin = setup_pin_hash
+    and o.is_active
+    and s.is_active;
+$$;
+
+-- Create a small attempts table for rate-limiting PIN verification
+create table if not exists staff_pin_attempts (
+  id bigserial primary key,
+  staff_id uuid,
+  email text,
+  ip inet,
+  attempted_at timestamptz not null default now(),
+  success boolean not null
+);
+
+-- ============================================================
+-- RPC: Verify staff PIN with rate limiting (security definer)
+-- Returns minimal staff info when the provided PIN matches the stored value.
+-- Accepts optional `client_ip` (inet) for logging and blocking by IP.
+-- Limits: configurable here (defaults: 5 attempts / 5 minutes).
+-- ============================================================
+-- Remove older overloads to avoid ambiguous function selection errors
+drop function if exists verify_staff_pin(text, text);
+drop function if exists verify_staff_pin(text, text, inet);
+
+create or replace function verify_staff_pin(
+  email_in text,
+  pin_input text,
+  client_ip inet default null
+)
+returns table(
+  id uuid,
+  outlet_id uuid,
+  name text,
+  email text,
+  role text,
+  is_active boolean
+)
+language plpgsql
+security definer
+volatile
+as $$
+declare
+  v_staff record;
+  v_failed_count int := 0;
+  v_time_window interval := interval '5 minutes';
+  v_max_attempts int := 5;
+begin
+  select * into v_staff from staff s where lower(s.email) = lower(email_in) limit 1;
+
+  -- If no staff row, record a failed attempt and return no rows
+  if not found then
+    insert into staff_pin_attempts(staff_id, email, ip, success)
+      values (null, lower(email_in), client_ip, false);
+    return;
+  end if;
+
+  -- Count recent failed attempts for this staff or IP
+  select count(*) into v_failed_count from staff_pin_attempts a
+    where ((a.staff_id = v_staff.id) or (lower(a.email) = lower(email_in)) or (client_ip is not null and a.ip = client_ip))
+      and a.success = false
+      and a.attempted_at > now() - v_time_window;
+
+  if v_failed_count >= v_max_attempts then
+    raise exception 'Too many failed PIN attempts. Try again later.';
+  end if;
+
+  if not v_staff.is_active then
+    insert into staff_pin_attempts(staff_id, email, ip, success)
+      values (v_staff.id, lower(email_in), client_ip, false);
+    raise exception 'Staff account is inactive.';
+  end if;
+
+  -- Check raw or hashed PIN
+  if v_staff.pin = pin_input
+     or encode(digest(pin_input || 'naijapospro_salt_v1', 'sha256'), 'hex') = v_staff.pin
+  then
+    insert into staff_pin_attempts(staff_id, email, ip, success)
+      values (v_staff.id, lower(email_in), client_ip, true);
+    return query
+      select v_staff.id, v_staff.outlet_id, v_staff.name, v_staff.email, v_staff.role, v_staff.is_active;
+  else
+    insert into staff_pin_attempts(staff_id, email, ip, success)
+      values (v_staff.id, lower(email_in), client_ip, false);
+    return;
+  end if;
+end;
+$$;
+
+-- ============================================================
 -- POLICIES
 -- ============================================================
 
@@ -295,32 +480,63 @@ create policy "merchants_own_data" on merchants
   with check (auth.uid()::text = id::text);
 
 -- OUTLETS: merchant of the outlet OR staff of the outlet
-drop policy if exists "outlets_access" on outlets;
-create policy "outlets_access" on outlets
-  for all using (
-    merchant_id::text = auth.uid()::text
-    or is_staff_of_outlet(id)
-  )
-  with check (
-    merchant_id::text = auth.uid()::text
-  );
+ drop policy if exists "outlets_access_select" on outlets;
+ create policy "outlets_access_select" on outlets
+   for select using (
+     merchant_id::text = auth.uid()::text
+     or is_staff_of_outlet(id)
+   );
+ drop policy if exists "outlets_access_insert" on outlets;
+ create policy "outlets_access_insert" on outlets
+   for insert with check (
+     merchant_id::text = auth.uid()::text
+   );
+ drop policy if exists "outlets_access_update" on outlets;
+ create policy "outlets_access_update" on outlets
+   for update using (
+     merchant_id::text = auth.uid()::text
+     or is_staff_of_outlet(id)
+   ) with check (
+     merchant_id::text = auth.uid()::text
+   );
+ drop policy if exists "outlets_access_delete" on outlets;
+ create policy "outlets_access_delete" on outlets
+   for delete using (
+     merchant_id::text = auth.uid()::text
+     or is_staff_of_outlet(id)
+   );
 
 -- STAFF: merchant of the staff's outlet OR the staff member themselves
-drop policy if exists "staff_access" on staff;
-create policy "staff_access" on staff
-  for all using (
-    id::text = auth.uid()::text
-    or is_merchant_of_outlet(outlet_id)
-  )
-  with check (
-    is_merchant_of_outlet(outlet_id)
-  );
+ drop policy if exists "staff_access_select" on staff;
+ create policy "staff_access_select" on staff
+   for select using (
+     id::text = auth.uid()::text
+     or is_merchant_of_outlet(outlet_id)
+   );
+ drop policy if exists "staff_access_insert" on staff;
+ create policy "staff_access_insert" on staff
+   for insert with check (
+     is_merchant_of_outlet(outlet_id)
+   );
+ drop policy if exists "staff_access_update" on staff;
+ create policy "staff_access_update" on staff
+   for update using (
+     id::text = auth.uid()::text
+     or is_merchant_of_outlet(outlet_id)
+   ) with check (
+     is_merchant_of_outlet(outlet_id)
+   );
+ drop policy if exists "staff_access_delete" on staff;
+ create policy "staff_access_delete" on staff
+   for delete using (
+     id::text = auth.uid()::text
+     or is_merchant_of_outlet(outlet_id)
+   );
 
--- CATEGORIES: can_access_outlet
-drop policy if exists "categories_access" on categories;
-create policy "categories_access" on categories
-  for all using (can_access_outlet(outlet_id))
-  with check (can_access_outlet(outlet_id));
+ drop policy if exists "categories_access" on categories;
+ create policy "categories_access" on categories
+   for all using (can_access_outlet(outlet_id))
+   with check (can_access_outlet(outlet_id));
 
 -- PRODUCTS: can_access_outlet
 drop policy if exists "products_access" on products;

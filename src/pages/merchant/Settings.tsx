@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 
 /**
  * MerchantSettings Component
- * Allows merchants to view and update their core profile details, 
+ * Allows merchants to view and update their core profile details,
  * default tax rates, and base currency configuration.
  */
 export default function MerchantSettings() {
@@ -67,7 +67,6 @@ export default function MerchantSettings() {
     <div>
       <Header title="Settings" subtitle="Manage your business profile" />
       <div className="p-4 sm:p-6 max-w-2xl space-y-6">
-        
         {/* SECTION: Business Profile Info */}
         <div className="bg-pos-card border border-pos-border rounded-xl p-4 sm:p-6 space-y-4">
           <h3 className="font-semibold text-pos-text text-base sm:text-lg">
@@ -126,6 +125,7 @@ export default function MerchantSettings() {
                 { value: "USD", label: "USD — US Dollar" },
                 { value: "GBP", label: "GBP — British Pound" },
                 { value: "GHS", label: "GHS — Ghanaian Cedi" },
+                { value: "IDR", label: "IDR — Indonesian Rupiah" },
               ]}
             />
             <Input

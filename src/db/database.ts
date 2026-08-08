@@ -79,7 +79,7 @@ export class POSDatabase extends Dexie {
     // Version 1 (Legacy schema)
     this.version(1).stores({
       merchants: "id, email, syncStatus",
-      outlets: "id, merchantId, isActive, syncStatus",
+      outlets: "id, merchantId, outletCode, isActive, syncStatus",
       categories: "id, outletId, syncStatus",
       products: "id, outletId, categoryId, sku, isActive, syncStatus",
       sales: "id, outletId, receiptNumber, status, createdAt, syncStatus",

@@ -20,7 +20,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { syncRecord } from "@/lib/sync";
-import { generateId, hashPin, formatDateShort } from "@/utils/helpers";
+import { generateId, formatDateShort } from "@/utils/helpers";
 import type { Outlet } from "@/types";
 import { TIER_LIMITS } from "@/types";
 
@@ -153,14 +153,6 @@ export default function OutletsPage() {
       showError("Outlet name and address are required.");
       return;
     }
-    if (!editingOutlet && (!form.pin || form.pin.length < 4)) {
-      showError("Device Setup PIN must be at least 4 digits.");
-      return;
-    }
-    if (form.pin && form.pin !== form.confirmPin) {
-      showError("PINs do not match.");
-      return;
-    }
 
     setSaving(true);
     try {
@@ -178,16 +170,15 @@ export default function OutletsPage() {
           syncStatus: "pending",
         };
 
-        // Hash new PIN if provided during update
-        if (form.pin) updates.pin = await hashPin(form.pin);
-
         await db.outlets.update(editingOutlet.id, updates);
         const updatedOutlet = await db.outlets.get(editingOutlet.id);
-        if (updatedOutlet) await syncRecord("outlets", updatedOutlet);
+        if (updatedOutlet) {
+          const result = await syncRecord("outlets", updatedOutlet);
+          if (!result.ok && !result.skipped) throw new Error((result.error as Error)?.message || "Outlet could not be saved to Supabase.");
+        }
         success("Outlet configuration updated.");
       } else {
         // Construct entity for brand new outlet creation
-        const pinHash = await hashPin(form.pin);
         const outletCode = generateOutletCode();
         const newOutletId = generateId();
 
@@ -198,7 +189,9 @@ export default function OutletsPage() {
           name: form.name.trim(),
           address: form.address.trim(),
           phone: form.phone.trim(),
-          pin: pinHash,
+          // Staff Supabase Auth is the terminal credential. Do not create or
+          // retain a browser-managed outlet secret.
+          pin: "",
           isActive: true,
           taxEnabled: form.taxEnabled,
           receiptFooter: form.receiptFooter.trim(),
@@ -208,7 +201,11 @@ export default function OutletsPage() {
         };
 
         await db.outlets.add(outlet as Outlet);
-        await syncRecord("outlets", outlet);
+        const result = await syncRecord("outlets", outlet);
+        if (!result.ok && !result.skipped) {
+          await db.outlets.delete(newOutletId);
+          throw new Error((result.error as Error)?.message || "Outlet could not be created in Supabase.");
+        }
         success(`Outlet created! Pair Code: ${outletCode}`);
       }
 

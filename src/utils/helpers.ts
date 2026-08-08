@@ -8,12 +8,22 @@ export const generateReceiptNumber = (outletId: string): string => {
   return `${prefix}-${ts}`;
 };
 
+const currencyLocales: Record<string, string> = {
+  NGN: "en-NG",
+  USD: "en-US",
+  GBP: "en-GB",
+  GHS: "en-GH",
+  IDR: "id-ID",
+};
+
 export const formatCurrency = (amount: number, currency = "NGN"): string => {
-  return new Intl.NumberFormat("en-NG", {
+  const locale = currencyLocales[currency] ?? "en-US";
+  const fractionDigits = currency === "IDR" ? 0 : 2;
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(amount);
 };
 
@@ -43,7 +53,10 @@ export const hashPin = async (pin: string): Promise<string> => {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 
-export const verifyPin = async (pin: string, hash: string): Promise<boolean> => {
+export const verifyPin = async (
+  pin: string,
+  hash: string,
+): Promise<boolean> => {
   const computed = await hashPin(pin);
   return computed === hash;
 };
@@ -56,7 +69,10 @@ export const hashPassword = async (password: string): Promise<string> => {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 
-export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+export const verifyPassword = async (
+  password: string,
+  hash: string,
+): Promise<boolean> => {
   const computed = await hashPassword(password);
   return computed === hash;
 };
@@ -74,5 +90,6 @@ export const getMonthStart = (): string => {
   return d.toISOString();
 };
 
-export const clsx = (...classes: (string | undefined | false | null)[]): string =>
-  classes.filter(Boolean).join(" ");
+export const clsx = (
+  ...classes: (string | undefined | false | null)[]
+): string => classes.filter(Boolean).join(" ");

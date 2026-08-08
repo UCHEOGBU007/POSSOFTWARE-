@@ -31,6 +31,7 @@ const EXPENSE_CATEGORIES = [
 export default function ExpensesPage() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
+  const staff = outletSession!.staff;
   const { success, error: showError } = useToast();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -78,6 +79,7 @@ export default function ExpensesPage() {
         amount,
         description: form.description,
         date: form.date,
+        staffId: staff?.id,
         createdAt: new Date().toISOString(),
         syncStatus: "pending" as const,
       };
@@ -146,7 +148,7 @@ export default function ExpensesPage() {
           </div>
         )}
 
-        <div className="bg-pos-card border border-pos-border rounded-xl overflow-hidden">
+        <div className="bg-pos-card border border-pos-border rounded-xl overflow-x-auto">
           <div className="px-6 py-4 border-b border-pos-border">
             <h3 className="font-semibold text-pos-text">Expense Records</h3>
           </div>

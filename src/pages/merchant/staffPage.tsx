@@ -19,7 +19,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { syncRecord } from "@/lib/sync";
-import { generateId, formatDateShort } from "@/utils/helpers";
+import { formatDateShort } from "@/utils/helpers";
 import type { Outlet, Staff } from "@/types";
 
 /**
@@ -54,7 +54,7 @@ const defaultForm: StaffForm = {
  * and assign them to specific store outlets.
  */
 export default function StaffPage() {
-  const { merchantSession } = useAuth();
+  const { merchantSession, createStaff } = useAuth();
   const merchant = merchantSession?.merchant;
   const { success, error: showError } = useToast();
 
@@ -148,8 +148,8 @@ export default function StaffPage() {
     }
 
     // Require valid PIN during initial creation
-    if (!editingStaff && (!form.pin || form.pin.length < 4)) {
-      showError("Terminal Login PIN must be 4 to 6 digits.");
+    if (!editingStaff && (!form.pin || form.pin.length < 12)) {
+      showError("Staff password must be at least 12 characters.");
       return;
     }
 
@@ -182,29 +182,26 @@ export default function StaffPage() {
 
         await db.staff.update(editingStaff.id, updates);
         const updatedStaff = await db.staff.get(editingStaff.id);
-        if (updatedStaff) await syncRecord("staff", updatedStaff);
+        if (updatedStaff) {
+          const syncResult = await syncRecord("staff", updatedStaff);
+          if (!syncResult.ok) {
+            throw new Error(
+              (syncResult.error as Error)?.message ||
+                "Failed to sync updated staff to Supabase.",
+            );
+          }
+        }
 
         success("Staff details updated.");
       } else {
-        // Construct new staff record payload
-        const newStaffId = generateId();
-
-        const staffMember: Staff & Record<string, any> = {
-          id: newStaffId,
-          outletId: form.outletId,
-          name: form.name.trim(),
-          email: form.email.trim().toLowerCase(),
-          phone: form.phone.trim(),
-          pin: form.pin,
-          role: form.role,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now,
-          syncStatus: "pending",
-        };
-
-        await db.staff.add(staffMember as Staff);
-        await syncRecord("staff", staffMember);
+        await createStaff(
+          form.outletId,
+          form.name.trim(),
+          form.email.trim().toLowerCase(),
+          form.phone.trim(),
+          form.role,
+          form.pin,
+        );
 
         success(`Staff member "${form.name}" created and assigned!`);
       }
@@ -494,22 +491,19 @@ export default function StaffPage() {
             </select>
           </div>
 
-          {/* Terminal Login PIN Entry & Confirmation */}
+          {/* Staff credentials are Supabase Auth passwords, not a local PIN. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label={
                 editingStaff
-                  ? "New Terminal PIN (optional)"
-                  : "Terminal Login PIN (4–6 digits) *"
+                  ? "New staff password (not supported here)"
+                  : "Initial staff password (12+ characters) *"
               }
               type={showPin ? "text" : "password"}
-              placeholder="e.g. 1234"
+              placeholder="Use a unique 12+ character password"
               value={form.pin}
               onChange={(e) =>
-                setForm({
-                  ...form,
-                  pin: e.target.value.replace(/\D/g, "").slice(0, 6), // Sanitize numeric input only up to 6 digits
-                })
+                setForm({ ...form, pin: e.target.value })
               }
               rightIcon={
                 <button
@@ -522,15 +516,12 @@ export default function StaffPage() {
               }
             />
             <Input
-              label="Confirm PIN"
+              label="Confirm password"
               type={showPin ? "text" : "password"}
-              placeholder="Repeat PIN"
+              placeholder="Repeat password"
               value={form.confirmPin}
               onChange={(e) =>
-                setForm({
-                  ...form,
-                  confirmPin: e.target.value.replace(/\D/g, "").slice(0, 6), // Sanitize numeric input only up to 6 digits
-                })
+                setForm({ ...form, confirmPin: e.target.value })
               }
             />
           </div>

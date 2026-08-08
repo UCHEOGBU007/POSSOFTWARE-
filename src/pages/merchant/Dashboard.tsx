@@ -11,6 +11,7 @@ import {
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/db/database";
+import { getSupabaseConfigStatus, supabase } from "@/lib/supabase";
 import Header from "@/components/layout/Header";
 import { StatCard } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -38,6 +39,7 @@ export default function MerchantDashboard() {
   const [todayRevenue, setTodayRevenue] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
   const [totalCustomers, setTotalCustomers] = useState(0);
+  const [todayExpenses, setTodayExpenses] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Fetch metrics and operational data from IndexedDB when merchant ID changes
@@ -49,11 +51,24 @@ export default function MerchantDashboard() {
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // Retrieve all outlets associated with the active merchant
-        const outs = await db.outlets
-          .where("merchantId")
-          .equals(merchant.id)
-          .toArray();
+        // Cloud data is authoritative so a merchant sees sales, inventory and
+        // expenses entered by every outlet/device, not just this browser cache.
+        const { isConfigured } = getSupabaseConfigStatus();
+        let outs: Outlet[];
+        if (isConfigured) {
+          const { data, error } = await supabase.from("outlets").select("*").eq("merchant_id", merchant.id);
+          if (error) throw error;
+          outs = (data ?? []).map((row: any) => ({
+            id: row.id, merchantId: row.merchant_id, outletCode: row.outlet_code,
+            name: row.name, address: row.address, phone: row.phone, currency: row.currency,
+            pin: "", isActive: row.is_active, taxEnabled: row.tax_enabled,
+            receiptFooter: row.receipt_footer, createdAt: row.created_at, updatedAt: row.updated_at,
+            syncStatus: "synced" as const,
+          }));
+          await db.outlets.bulkPut(outs);
+        } else {
+          outs = await db.outlets.where("merchantId").equals(merchant.id).toArray();
+        }
 
         if (!isMounted) return;
         setOutlets(outs);
@@ -66,18 +81,41 @@ export default function MerchantDashboard() {
           setTodayRevenue(0);
           setTotalProducts(0);
           setTotalCustomers(0);
+          setTodayExpenses(0);
           setLoading(false);
           return;
         }
 
         const todayStart = getTodayStart();
 
-        // Fetch completed sales for today across all merchant outlets
-        const todaySales = await db.sales
-          .where("outletId")
-          .anyOf(outletIds)
-          .filter((s) => s.createdAt >= todayStart && s.status === "completed")
-          .toArray();
+        let todaySales: Sale[];
+        let prodsCount: number;
+        let custsCount: number;
+        let expenseTotal: number;
+        if (isConfigured) {
+          const [salesResult, productsResult, customersResult, expensesResult] = await Promise.all([
+            supabase.from("sales").select("*").in("outlet_id", outletIds).eq("status", "completed").gte("created_at", todayStart),
+            supabase.from("products").select("id", { count: "exact", head: true }).in("outlet_id", outletIds),
+            supabase.from("customers").select("id", { count: "exact", head: true }).in("outlet_id", outletIds),
+            supabase.from("expenses").select("amount").in("outlet_id", outletIds).gte("expense_date", todayStart.slice(0, 10)),
+          ]);
+          if (salesResult.error || productsResult.error || customersResult.error || expensesResult.error) throw salesResult.error || productsResult.error || customersResult.error || expensesResult.error;
+          todaySales = (salesResult.data ?? []).map((row: any) => ({
+            id: row.id, outletId: row.outlet_id, receiptNumber: row.receipt_number, items: row.items,
+            subtotal: Number(row.subtotal), taxAmount: Number(row.tax_amount), discountAmount: Number(row.discount_amount), total: Number(row.total), amountPaid: Number(row.amount_paid), change: Number(row.change), paymentMethod: row.payment_method, status: row.status, customerId: row.customer_id, customerName: row.customer_name, staffId: row.staff_id, staffName: row.staff_name, note: row.note, createdAt: row.created_at, syncStatus: "synced" as const,
+          }));
+          await db.sales.bulkPut(todaySales);
+          prodsCount = productsResult.count ?? 0;
+          custsCount = customersResult.count ?? 0;
+          expenseTotal = (expensesResult.data ?? []).reduce((sum, expense: { amount: number | string }) => sum + Number(expense.amount), 0);
+        } else {
+          todaySales = await db.sales.where("outletId").anyOf(outletIds).filter((s) => s.createdAt >= todayStart && s.status === "completed").toArray();
+          [prodsCount, custsCount] = await Promise.all([
+            db.products.where("outletId").anyOf(outletIds).count(),
+            db.customers.where("outletId").anyOf(outletIds).count(),
+          ]);
+          expenseTotal = (await db.expenses.where("outletId").anyOf(outletIds).filter((expense) => expense.date >= todayStart.slice(0, 10)).toArray()).reduce((sum, expense) => sum + expense.amount, 0);
+        }
 
         // Calculate total revenue generated today
         const revenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
@@ -87,12 +125,6 @@ export default function MerchantDashboard() {
           b.createdAt.localeCompare(a.createdAt),
         );
 
-        // Query product and customer counts in parallel across all outlets
-        const [prodsCount, custsCount] = await Promise.all([
-          db.products.where("outletId").anyOf(outletIds).count(),
-          db.customers.where("outletId").anyOf(outletIds).count(),
-        ]);
-
         if (!isMounted) return;
 
         // Update dashboard state with aggregated database query results
@@ -100,6 +132,7 @@ export default function MerchantDashboard() {
         setRecentSales(sortedSales.slice(0, 5)); // Keep only the 5 most recent sales
         setTotalProducts(prodsCount);
         setTotalCustomers(custsCount);
+        setTodayExpenses(expenseTotal);
       } catch (error) {
         console.error("Error loading dashboard data:", error);
       } finally {
@@ -172,10 +205,12 @@ export default function MerchantDashboard() {
         {/* ==================================================================== */}
         {/* KEY PERFORMANCE METRICS GRID                                         */}
         {/* ==================================================================== */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <StatCard
             label="Today's Revenue"
-            value={loading ? "..." : formatCurrency(todayRevenue)}
+            value={
+              loading ? "..." : formatCurrency(todayRevenue, merchant.currency)
+            }
             icon={<TrendingUp size={20} />}
             iconColor="text-emerald-400"
           />
@@ -200,6 +235,12 @@ export default function MerchantDashboard() {
             value={loading ? "..." : totalCustomers.toLocaleString()}
             icon={<Users size={20} />}
             iconColor="text-amber-400"
+          />
+          <StatCard
+            label="Today's Expenses"
+            value={loading ? "..." : formatCurrency(todayExpenses, merchant.currency)}
+            icon={<AlertCircle size={20} />}
+            iconColor="text-red-400"
           />
         </div>
 
@@ -244,12 +285,13 @@ export default function MerchantDashboard() {
                       <p className="text-xs text-pos-muted">
                         {sale.items?.length || 0} item
                         {sale.items?.length !== 1 ? "s" : ""} ·{" "}
-                        {formatDateShort(sale.createdAt)}
+                        {formatDateShort(sale.createdAt)} · {outlets.find((outlet) => outlet.id === sale.outletId)?.name ?? "Outlet"}
+                        {sale.staffName ? ` · ${sale.staffName}` : ""}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-sm font-semibold text-pos-text">
-                        {formatCurrency(sale.total)}
+                        {formatCurrency(sale.total, merchant.currency)}
                       </p>
                       <Badge
                         variant={

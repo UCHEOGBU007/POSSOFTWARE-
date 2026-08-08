@@ -1,16 +1,18 @@
 import { useState } from "react";
-import { Database, Wifi, Trash2 } from "lucide-react";
+import { Database, Wifi, Trash2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/db/database";
 import Header from "@/components/layout/Header";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { syncPendingData } from "@/lib/sync";
 
 export default function OutletSettings() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
   const { success, error: showError } = useToast();
   const [cleaning, setCleaning] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const handleCleanSyncedData = async () => {
     if (
@@ -62,17 +64,39 @@ export default function OutletSettings() {
         </div>
 
         <div className="bg-pos-card border border-pos-border rounded-xl p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Database size={18} className="text-blue-400" />
-            <h3 className="font-semibold text-pos-text">
-              Offline Data Management
-            </h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Database size={18} className="text-blue-400" />
+              <div>
+                <h3 className="font-semibold text-pos-text">
+                  Offline Data Management
+                </h3>
+                <p className="text-sm text-pos-muted">
+                  NaijaPOS Pro stores data locally for offline use. Once data is
+                  synced to the cloud, you can clear it from the browser to free
+                  up storage.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              icon={<RefreshCw size={16} />}
+              loading={syncing}
+              onClick={async () => {
+                setSyncing(true);
+                try {
+                  await syncPendingData();
+                  success("Pending local records synced to Supabase.");
+                } catch (err: any) {
+                  showError(err.message || "Failed to sync data.");
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+            >
+              Sync Now
+            </Button>
           </div>
-          <p className="text-sm text-pos-muted">
-            NaijaPOS Pro stores data locally for offline use. Once data is
-            synced to the cloud, you can clear it from the browser to free up
-            storage.
-          </p>
           <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
             Only clear synced data after confirming your cloud backup is
             complete.

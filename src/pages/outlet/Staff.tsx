@@ -320,7 +320,15 @@
 // }
 
 import { useEffect, useState } from "react";
-import { Plus, UserCheck, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
+import {
+  Plus,
+  UserCheck,
+  Pencil,
+  Trash2,
+  Eye,
+  EyeOff,
+  RefreshCw,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/db/database";
 import Header from "@/components/layout/Header";
@@ -330,7 +338,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import Select from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
-import { syncRecord } from "@/lib/sync";
+import { syncRecord, syncPendingData } from "@/lib/sync";
 import { formatDateShort, hashPin } from "@/utils/helpers";
 import type { Staff, StaffRole } from "@/types";
 
@@ -362,6 +370,7 @@ export default function StaffPage() {
   const [form, setForm] = useState<StaffForm>(defaultForm);
   const [showPin, setShowPin] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const load = async () => {
     if (!outlet?.id) return;
@@ -385,6 +394,19 @@ export default function StaffPage() {
     setEditing(null);
     setForm(defaultForm);
     setShowModal(true);
+  };
+
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    try {
+      await syncPendingData();
+      success("Pending local records synced to Supabase.");
+      load();
+    } catch (err: any) {
+      showError(err.message || "Failed to sync data.");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const openEdit = (s: Staff) => {
@@ -434,7 +456,15 @@ export default function StaffPage() {
 
         await db.staff.update(editing.id, updates);
         const updatedStaff = await db.staff.get(editing.id);
-        if (updatedStaff) await syncRecord("staff", updatedStaff);
+        if (updatedStaff) {
+          const syncResult = await syncRecord("staff", updatedStaff);
+          if (!syncResult.ok) {
+            throw new Error(
+              (syncResult.error as Error)?.message ||
+                "Failed to sync updated staff to Supabase.",
+            );
+          }
+        }
         success("Staff record updated successfully.");
       } else {
         await createStaff(
@@ -463,7 +493,15 @@ export default function StaffPage() {
       syncStatus: "pending",
     });
     const updatedStaff = await db.staff.get(s.id);
-    if (updatedStaff) await syncRecord("staff", updatedStaff);
+    if (updatedStaff) {
+      const syncResult = await syncRecord("staff", updatedStaff);
+      if (!syncResult.ok) {
+        throw new Error(
+          (syncResult.error as Error)?.message ||
+            "Failed to sync staff activation change.",
+        );
+      }
+    }
     load();
     success(`Staff member ${nextStatus ? "activated" : "deactivated"}.`);
   };
@@ -471,7 +509,13 @@ export default function StaffPage() {
   const deleteStaff = async (s: Staff) => {
     if (!confirm(`Remove "${s.name}"? This action cannot be undone.`)) return;
     await db.staff.delete(s.id);
-    await syncRecord("staff", s.id, "delete");
+    const syncResult = await syncRecord("staff", s.id, "delete");
+    if (!syncResult.ok) {
+      throw new Error(
+        (syncResult.error as Error)?.message ||
+          "Failed to delete staff from Supabase.",
+      );
+    }
     success("Staff member removed.");
     load();
   };
@@ -482,9 +526,20 @@ export default function StaffPage() {
         title="Staff Management"
         subtitle={`${staffList.length} staff member(s) assigned to ${outlet.name}`}
         actions={
-          <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
-            Add Staff
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              icon={<RefreshCw size={16} />}
+              size="sm"
+              variant="secondary"
+              onClick={handleSyncNow}
+              loading={syncing}
+            >
+              Sync Now
+            </Button>
+            <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
+              Add Staff
+            </Button>
+          </div>
         }
       />
       <div className="p-6">
