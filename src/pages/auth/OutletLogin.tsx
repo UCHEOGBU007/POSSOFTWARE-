@@ -45,7 +45,9 @@ export default function OutletLogin() {
       <div className="flex w-full justify-between items-center">
         <div className="flex items-center gap-2">
           <Store className="text-blue-500" size={24} />
-          <span className="font-bold text-pos-text text-lg">National POS Terminal</span>
+          <span className="font-bold text-pos-text text-lg">
+            Kasih POS Terminal
+          </span>
         </div>
         <button
           type="button"
@@ -62,26 +64,56 @@ export default function OutletLogin() {
             <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center mx-auto mb-3">
               <Smartphone size={28} className="text-blue-400" />
             </div>
-            <h1 className="text-xl font-bold text-pos-text">Staff terminal sign in</h1>
+            <h1 className="text-xl font-bold text-pos-text">
+              Staff terminal sign in
+            </h1>
             <p className="text-xs text-pos-muted mt-2">
-              Sign in with the account assigned to this outlet. Your outlet and permissions are loaded securely.
+              Sign in with the account assigned to this outlet. Your outlet and
+              permissions are loaded securely.
             </p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input label="Staff email" type="email" autoComplete="username" placeholder="cashier@business.com" value={email} onChange={(event) => setEmail(event.target.value)} required />
-            <Input label="Staff password" type="password" autoComplete="current-password" placeholder="Your staff password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-            <Button type="submit" className="w-full" size="lg" loading={loading} icon={<LogIn size={18} />}>
+            <Input
+              label="Staff email"
+              type="email"
+              autoComplete="username"
+              placeholder="cashier@business.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+            <Input
+              label="Staff password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="Your staff password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              loading={loading}
+              icon={<LogIn size={18} />}
+            >
               Sign in to POS
             </Button>
           </form>
         </div>
         <div className="mt-6 text-center">
-          <Link to="/login" className="text-xs text-pos-muted hover:text-blue-400 inline-flex items-center gap-1.5">
+          <Link
+            to="/login"
+            className="text-xs text-pos-muted hover:text-blue-400 inline-flex items-center gap-1.5"
+          >
             <Lock size={12} /> Merchant Admin Login
           </Link>
         </div>
       </main>
-      <p className="text-center text-[11px] text-pos-muted">Enterprise POS Framework © 2026</p>
+      <p className="text-center text-[11px] text-pos-muted">
+        Enterprise POS Framework © 2026
+      </p>
     </div>
   );
 }

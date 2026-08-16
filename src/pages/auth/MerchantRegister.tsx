@@ -80,7 +80,7 @@ export default function MerchantRegister() {
     setLoading(true);
     try {
       await registerMerchant({ ...form, tier: selectedTier });
-      success("Account created! Welcome to NaijaPOS Pro.");
+      success("Account created! Welcome to KasihPOS  Pro.");
       navigate("/merchant/dashboard");
     } catch (err: any) {
       showError(err.message);
@@ -97,7 +97,7 @@ export default function MerchantRegister() {
             <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
               <ShoppingBag size={18} className="text-white" />
             </div>
-            <span className="font-bold text-pos-text">NaijaPOS Pro</span>
+            <span className="font-bold text-pos-text">KasihPOS Pro</span>
           </div>
           <button
             type="button"

@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import {
   CreditCard,
@@ -260,7 +259,7 @@ export default function BillingPage() {
             Payment is processed via Paystack or Flutterwave. Bank transfer and
             card payments supported. Contact{" "}
             <span className="text-blue-400 font-medium">
-              billing@naijapos.com
+              billing@KasihPOS .com
             </span>{" "}
             for manual renewal.
           </p>

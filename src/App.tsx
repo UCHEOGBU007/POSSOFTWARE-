@@ -111,7 +111,7 @@
 //               <path d="M16 10a4 4 0 0 1-8 0" />
 //             </svg>
 //           </div>
-//           <p className="text-pos-text font-semibold">NaijaPOS Pro</p>
+//           <p className="text-pos-text font-semibold">KasihPOS  Pro</p>
 //           <p className="text-pos-muted text-xs mt-1">Loading...</p>
 //         </div>
 //       </div>
@@ -261,7 +261,7 @@ function AppInner() {
               <path d="M16 10a4 4 0 0 1-8 0" />
             </svg>
           </div>
-          <p className="text-pos-text font-semibold">NaijaPOS Pro</p>
+          <p className="text-pos-text font-semibold">KasihPOS Pro</p>
           <p className="text-pos-muted text-xs mt-1">Loading...</p>
         </div>
       </div>

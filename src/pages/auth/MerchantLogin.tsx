@@ -36,7 +36,7 @@
 //           <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center">
 //             <ShoppingBag size={20} className="text-white" />
 //           </div>
-//           <span className="font-bold text-pos-text text-lg">NaijaPOS Pro</span>
+//           <span className="font-bold text-pos-text text-lg">KasihPOS  Pro</span>
 //         </div>
 //         <div>
 //           <h2 className="text-3xl font-bold text-pos-text leading-tight mb-4">
@@ -64,7 +64,7 @@
 //           </div>
 //         </div>
 //         <p className="text-xs text-pos-muted">
-//           © 2025 NaijaPOS Pro. All rights reserved.
+//           © 2025 KasihPOS  Pro. All rights reserved.
 //         </p>
 //       </div>
 
@@ -75,7 +75,7 @@
 //               <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
 //                 <ShoppingBag size={18} className="text-white" />
 //               </div>
-//               <span className="font-bold text-pos-text">NaijaPOS Pro</span>
+//               <span className="font-bold text-pos-text">KasihPOS  Pro</span>
 //             </div>
 //             <button
 //               type="button"
@@ -195,7 +195,7 @@ export default function MerchantLogin() {
           <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center">
             <ShoppingBag size={20} className="text-white" />
           </div>
-          <span className="font-bold text-pos-text text-lg">NaijaPOS Pro</span>
+          <span className="font-bold text-pos-text text-lg">KasihPOS Pro</span>
         </div>
         <div>
           <h2 className="text-3xl font-bold text-pos-text leading-tight mb-4">
@@ -223,7 +223,7 @@ export default function MerchantLogin() {
           </div>
         </div>
         <p className="text-xs text-pos-muted">
-          © 2025 NaijaPOS Pro. All rights reserved.
+          {new Date().getFullYear()} KasihPOS Pro. All rights reserved.
         </p>
       </div>
 
@@ -234,7 +234,7 @@ export default function MerchantLogin() {
               <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
                 <ShoppingBag size={18} className="text-white" />
               </div>
-              <span className="font-bold text-pos-text">NaijaPOS Pro</span>
+              <span className="font-bold text-pos-text">KasihPOS Pro</span>
             </div>
             <button
               type="button"
