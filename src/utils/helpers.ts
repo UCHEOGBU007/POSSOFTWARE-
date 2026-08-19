@@ -16,7 +16,7 @@ const currencyLocales: Record<string, string> = {
   IDR: "id-ID",
 };
 
-export const formatCurrency = (amount: number, currency = "NGN"): string => {
+export const formatCurrency = (amount: number, currency = "IDR"): string => {
   const locale = currencyLocales[currency] ?? "en-US";
   const fractionDigits = currency === "IDR" ? 0 : 2;
   return new Intl.NumberFormat(locale, {

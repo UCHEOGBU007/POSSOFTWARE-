@@ -134,8 +134,8 @@ export default function BillingPage() {
             <div className="mt-4 flex items-start sm:items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-blue-400">
               <AlertCircle size={16} className="shrink-0 mt-0.5 sm:mt-0" />
               <span>
-                Trial expires {formatDateShort(merchant.subscriptionExpiry)}.
-                Upgrade to keep access.
+                Your Plan expires {formatDateShort(merchant.subscriptionExpiry)}
+                . Upgrade to keep access.
               </span>
             </div>
           )}
@@ -197,6 +197,10 @@ export default function BillingPage() {
                           "Inventory management",
                           "Sales reporting",
                           "Customer management",
+                          "Staff management",
+                          "Expense tracking",
+                          "Advanced analytics",
+                          "Priority support",
                           ...(tier !== "basic"
                             ? ["Staff management", "Expense tracking"]
                             : []),
