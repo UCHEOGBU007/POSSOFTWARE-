@@ -105,9 +105,10 @@ export default function OutletLogin() {
         <div className="mt-6 text-center">
           <Link
             to="/login"
-            className="text-xs text-pos-muted hover:text-blue-400 inline-flex items-center gap-1.5"
+            className="text-xs text-blue-600  hover:text-blue-400 inline-flex items-center gap-1.5"
           >
-            <Lock size={12} /> Merchant Admin Login
+            <Lock size={12} className="text-blue-600" />
+            Merchant Admin Login
           </Link>
         </div>
       </main>

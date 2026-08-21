@@ -1,4 +1,3 @@
-
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -66,7 +65,7 @@ const outletNav: NavItem[] = [
   { to: "/outlet/inventory", icon: <Boxes size={18} />, label: "Inventory" },
   { to: "/outlet/sales", icon: <Receipt size={18} />, label: "Sales History" },
   { to: "/outlet/customers", icon: <Users size={18} />, label: "Customers" },
-  { to: "/outlet/staff", icon: <UserCheck size={18} />, label: "Staff" },
+  // { to: "/outlet/staff", icon: <UserCheck size={18} />, label: "Staff" },
   { to: "/outlet/expenses", icon: <TrendingUp size={18} />, label: "Expenses" },
   { to: "/outlet/reports", icon: <BarChart2 size={18} />, label: "Reports" },
   { to: "/outlet/settings", icon: <Settings size={18} />, label: "Settings" },

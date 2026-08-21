@@ -11,6 +11,7 @@
 
 // import MerchantDashboard from "./pages/merchant/Dashboard";
 // import OutletsPage from "./pages/merchant/Outlets";
+// import MerchantStaff from "./pages/merchant/staffPage"; // 👈 Add Merchant Staff Page
 // import BillingPage from "./pages/merchant/Billing";
 // import MerchantSettings from "./pages/merchant/Settings";
 // import MerchantReports from "./pages/merchant/Reports";
@@ -20,7 +21,7 @@
 // import InventoryPage from "./pages/outlet/Inventory";
 // import SalesHistory from "./pages/outlet/Sales";
 // import CustomersPage from "./pages/outlet/Customers";
-// import StaffPage from "./pages/outlet/Staff";
+// // import StaffPage from "./pages/outlet/Staff";
 // import ExpensesPage from "./pages/outlet/Expenses";
 // import OutletReports from "./pages/outlet/Reports";
 // import OutletSettings from "./pages/outlet/OutletSettings";
@@ -39,6 +40,8 @@
 //       <Routes>
 //         <Route path="dashboard" element={<MerchantDashboard />} />
 //         <Route path="outlets" element={<OutletsPage />} />
+//         <Route path="staff" element={<MerchantStaff />} />{" "}
+//         {/* 👈 FIXED: Route added here */}
 //         <Route path="billing" element={<BillingPage />} />
 //         <Route path="reports" element={<MerchantReports />} />
 //         <Route path="settings" element={<MerchantSettings />} />
@@ -69,7 +72,7 @@
 //           <Route path="inventory" element={<InventoryPage />} />
 //           <Route path="sales" element={<SalesHistory />} />
 //           <Route path="customers" element={<CustomersPage />} />
-//           <Route path="staff" element={<StaffPage />} />
+//           {/* <Route path="staff" element={<StaffPage />} /> */}
 //           <Route path="expenses" element={<ExpensesPage />} />
 //           <Route path="reports" element={<OutletReports />} />
 //           <Route path="settings" element={<OutletSettings />} />
@@ -111,7 +114,7 @@
 //               <path d="M16 10a4 4 0 0 1-8 0" />
 //             </svg>
 //           </div>
-//           <p className="text-pos-text font-semibold">KasihPOS  Pro</p>
+//           <p className="text-pos-text font-semibold">KasihPOS Pro</p>
 //           <p className="text-pos-muted text-xs mt-1">Loading...</p>
 //         </div>
 //       </div>
@@ -152,31 +155,43 @@ import { ToastProvider } from "./components/ui/Toast";
 import Layout from "./components/layout/Layout";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
+// Auth Components & Route Guards
+import {
+  ProtectedMerchantRoute,
+  ProtectedOutletRoute,
+} from "./pages/auth/ProtectedRoute";
 import MerchantLogin from "./pages/auth/MerchantLogin";
 import MerchantRegister from "./pages/auth/MerchantRegister";
 import OutletLogin from "./pages/auth/OutletLogin";
 
+// Merchant Pages
 import MerchantDashboard from "./pages/merchant/Dashboard";
 import OutletsPage from "./pages/merchant/Outlets";
-import MerchantStaff from "./pages/merchant/staffPage"; // 👈 Add Merchant Staff Page
+import MerchantStaff from "./pages/merchant/staffPage";
 import BillingPage from "./pages/merchant/Billing";
 import MerchantSettings from "./pages/merchant/Settings";
 import MerchantReports from "./pages/merchant/Reports";
 
+// Outlet / POS Pages
 import OutletDashboard from "./pages/outlet/Dashboard";
 import POSTerminal from "./pages/outlet/POSTerminal";
 import InventoryPage from "./pages/outlet/Inventory";
 import SalesHistory from "./pages/outlet/Sales";
 import CustomersPage from "./pages/outlet/Customers";
-import StaffPage from "./pages/outlet/Staff";
 import ExpensesPage from "./pages/outlet/Expenses";
 import OutletReports from "./pages/outlet/Reports";
 import OutletSettings from "./pages/outlet/OutletSettings";
 
 function MerchantRoutes() {
   const { merchantSession, logoutMerchant } = useAuth();
-  if (!merchantSession) return <Navigate to="/login" replace />;
+
+  // Guarantees merchantSession exists before proceeding
+  if (!merchantSession) {
+    return <Navigate to="/login" replace />;
+  }
+
   const tier = merchantSession.merchant.tier;
+
   return (
     <Layout
       type="merchant"
@@ -187,8 +202,7 @@ function MerchantRoutes() {
       <Routes>
         <Route path="dashboard" element={<MerchantDashboard />} />
         <Route path="outlets" element={<OutletsPage />} />
-        <Route path="staff" element={<MerchantStaff />} />{" "}
-        {/* 👈 FIXED: Route added here */}
+        <Route path="staff" element={<MerchantStaff />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="reports" element={<MerchantReports />} />
         <Route path="settings" element={<MerchantSettings />} />
@@ -200,7 +214,12 @@ function MerchantRoutes() {
 
 function OutletRoutes() {
   const { outletSession, logoutOutlet } = useAuth();
-  if (!outletSession) return <Navigate to="/outlet-login" replace />;
+
+  // Guarantees outletSession exists before proceeding
+  if (!outletSession) {
+    return <Navigate to="/outlet-login" replace />;
+  }
+
   return (
     <POSProvider>
       <Layout
@@ -219,7 +238,6 @@ function OutletRoutes() {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="sales" element={<SalesHistory />} />
           <Route path="customers" element={<CustomersPage />} />
-          <Route path="staff" element={<StaffPage />} />
           <Route path="expenses" element={<ExpensesPage />} />
           <Route path="reports" element={<OutletReports />} />
           <Route path="settings" element={<OutletSettings />} />
@@ -232,6 +250,7 @@ function OutletRoutes() {
 
 function RootRedirect() {
   const { merchantSession, outletSession, isLoading } = useAuth();
+
   if (isLoading) return null;
   if (merchantSession) return <Navigate to="/merchant/dashboard" replace />;
   if (outletSession) return <Navigate to="/outlet/dashboard" replace />;
@@ -270,12 +289,34 @@ function AppInner() {
 
   return (
     <Routes>
+      {/* Root handling */}
       <Route path="/" element={<RootRedirect />} />
+
+      {/* Public Auth Routes (Supports both /login and /merchant-login) */}
       <Route path="/login" element={<MerchantLogin />} />
+      <Route path="/merchant-login" element={<MerchantLogin />} />
       <Route path="/register" element={<MerchantRegister />} />
       <Route path="/outlet-login" element={<OutletLogin />} />
-      <Route path="/merchant/*" element={<MerchantRoutes />} />
-      <Route path="/outlet/*" element={<OutletRoutes />} />
+
+      {/* Protected Portal Routes */}
+      <Route
+        path="/merchant/*"
+        element={
+          <ProtectedMerchantRoute>
+            <MerchantRoutes />
+          </ProtectedMerchantRoute>
+        }
+      />
+      <Route
+        path="/outlet/*"
+        element={
+          <ProtectedOutletRoute>
+            <OutletRoutes />
+          </ProtectedOutletRoute>
+        }
+      />
+
+      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

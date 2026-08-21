@@ -1,601 +1,550 @@
 -- ============================================================
--- NaijaPOS Pro — Supabase Database Schema
--- Insert this SQL in your Supabase Dashboard → SQL Editor
+-- NaijaPOS Pro — Unified Hardened Database Schema
 -- ============================================================
 
--- Enable UUID extension
-create extension if not exists "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- 1. BASE DATA TABLES
 -- ============================================================
--- MERCHANTS
--- ============================================================
-create table if not exists merchants (
-  id             uuid primary key default gen_random_uuid(),
-  business_name  text not null,
-  owner_name     text not null,
-  email          text not null unique,
-  phone          text not null,
-  password_hash  text not null,
-  tier           text not null check (tier in ('basic','standard','premium')),
-  subscription_status text not null check (subscription_status in ('active','expired','trial')),
-  subscription_expiry timestamptz not null,
-  address        text,
-  logo           text,
-  currency       text not null default 'NGN',
-  tax_rate       numeric(5,2) not null default 7.5,
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now()
+
+CREATE TABLE IF NOT EXISTS public.merchants (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_name       text NOT NULL,
+  owner_name          text NOT NULL,
+  email               text NOT NULL UNIQUE,
+  phone               text NOT NULL,
+  password_hash       text, -- Legacy column retained for compatibility; revoked below
+  tier                text NOT NULL CHECK (tier IN ('basic','standard','premium')),
+  subscription_status text NOT NULL CHECK (subscription_status IN ('active','expired','trial')),
+  subscription_expiry timestamptz NOT NULL,
+  address             text,
+  logo                text,
+  currency            text NOT NULL DEFAULT 'NGN',
+  tax_rate            numeric(5,2) NOT NULL DEFAULT 7.5,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
--- ============================================================
--- OUTLETS
--- ============================================================
-create table if not exists outlets (
-  id              uuid primary key default gen_random_uuid(),
-  merchant_id     uuid not null references merchants(id) on delete cascade,
-  name            text not null,
-  address         text not null,
+CREATE TABLE IF NOT EXISTS public.outlets (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  merchant_id     uuid NOT NULL REFERENCES public.merchants(id) ON DELETE CASCADE,
+  name            text NOT NULL,
+  address         text NOT NULL,
   phone           text,
-  outlet_code     text unique,
+  outlet_code     text UNIQUE,
   currency        text,
-  pin             text not null,
-  is_active       boolean not null default true,
-  tax_enabled     boolean not null default true,
+  pin             text, -- Legacy column
+  is_active       boolean NOT NULL DEFAULT true,
+  tax_enabled     boolean NOT NULL DEFAULT true,
   receipt_footer  text,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
-create index if not exists outlets_merchant_id_idx on outlets(merchant_id);
-create index if not exists outlets_outlet_code_idx on outlets(outlet_code);
+CREATE INDEX IF NOT EXISTS outlets_merchant_id_idx ON public.outlets(merchant_id);
+CREATE INDEX IF NOT EXISTS outlets_outlet_code_idx ON public.outlets(outlet_code);
 
--- ============================================================
--- CATEGORIES
--- ============================================================
-create table if not exists categories (
-  id          uuid primary key default gen_random_uuid(),
-  outlet_id   uuid not null references outlets(id) on delete cascade,
-  name        text not null,
+CREATE TABLE IF NOT EXISTS public.categories (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id   uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  name        text NOT NULL,
   color       text,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
 
-create index if not exists categories_outlet_id_idx on categories(outlet_id);
+CREATE INDEX IF NOT EXISTS categories_outlet_id_idx ON public.categories(outlet_id);
 
--- ============================================================
--- PRODUCTS
--- ============================================================
-create table if not exists products (
-  id               uuid primary key default gen_random_uuid(),
-  outlet_id        uuid not null references outlets(id) on delete cascade,
-  category_id      uuid references categories(id) on delete set null,
-  name             text not null,
-  sku              text not null,
-  barcode          text,
-  description      text,
-  price            numeric(12,2) not null,
-  cost_price       numeric(12,2) not null default 0,
-  stock            integer not null default 0,
-  low_stock_alert  integer not null default 5,
-  unit             text not null default 'pcs',
-  image            text,
-  is_active        boolean not null default true,
-  track_stock      boolean not null default true,
-  created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now(),
-  unique (outlet_id, sku)
+CREATE TABLE IF NOT EXISTS public.products (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id       uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  category_id     uuid REFERENCES public.categories(id) ON DELETE SET NULL,
+  name            text NOT NULL,
+  sku             text NOT NULL,
+  barcode         text,
+  description     text,
+  price           numeric(12,2) NOT NULL,
+  cost_price      numeric(12,2) NOT NULL DEFAULT 0,
+  stock           integer NOT NULL DEFAULT 0,
+  low_stock_alert integer NOT NULL DEFAULT 5,
+  unit            text NOT NULL DEFAULT 'pcs',
+  image           text,
+  is_active       boolean NOT NULL DEFAULT true,
+  track_stock     boolean NOT NULL DEFAULT true,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (outlet_id, sku),
+  CONSTRAINT products_non_negative_values CHECK (price >= 0 AND cost_price >= 0 AND stock >= 0 AND low_stock_alert >= 0)
 );
 
-create index if not exists products_outlet_id_idx on products(outlet_id);
-create index if not exists products_sku_idx on products(sku);
+CREATE INDEX IF NOT EXISTS products_outlet_id_idx ON public.products(outlet_id);
+CREATE INDEX IF NOT EXISTS products_sku_idx ON public.products(sku);
 
--- ============================================================
--- CUSTOMERS
--- ============================================================
-create table if not exists customers (
-  id              uuid primary key default gen_random_uuid(),
-  outlet_id       uuid not null references outlets(id) on delete cascade,
-  name            text not null,
-  phone           text not null,
+CREATE TABLE IF NOT EXISTS public.customers (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id       uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  name            text NOT NULL,
+  phone           text NOT NULL,
   email           text,
   address         text,
-  loyalty_points  integer not null default 0,
-  total_spent     numeric(15,2) not null default 0,
-  visit_count     integer not null default 0,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now(),
-  unique (outlet_id, phone)
+  loyalty_points  integer NOT NULL DEFAULT 0,
+  total_spent     numeric(15,2) NOT NULL DEFAULT 0,
+  visit_count     integer NOT NULL DEFAULT 0,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (outlet_id, phone)
 );
 
-create index if not exists customers_outlet_id_idx on customers(outlet_id);
+CREATE INDEX IF NOT EXISTS customers_outlet_id_idx ON public.customers(outlet_id);
 
--- ============================================================
--- STAFF
--- ============================================================
-create table if not exists staff (
-  id          uuid primary key default gen_random_uuid(),
-  outlet_id   uuid not null references outlets(id) on delete cascade,
-  name        text not null,
-  email       text not null unique,
+CREATE TABLE IF NOT EXISTS public.staff (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id   uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  name        text NOT NULL,
+  email       text NOT NULL UNIQUE,
   phone       text,
-  pin         text,
-  role        text not null check (role in ('manager','cashier')),
-  is_active   boolean not null default true,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  pin         text, -- Legacy column
+  role        text NOT NULL CHECK (role IN ('manager','cashier')),
+  is_active   boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- Migration: add email column to existing staff table (if it doesn't have it yet)
-do $$
-begin
-  if not exists (
-    select 1 from information_schema.columns
-    where table_name = 'staff' and column_name = 'email'
-  ) then
-    alter table staff add column email text;
-    -- Give existing rows placeholder emails so we can enforce NOT NULL + UNIQUE
-    update staff set email = concat('staff-', id, '@placeholder.pos') where email is null;
-    alter table staff alter column email set not null;
-    alter table staff add constraint staff_email_unique unique (email);
-  end if;
+CREATE INDEX IF NOT EXISTS staff_outlet_id_idx ON public.staff(outlet_id);
+CREATE INDEX IF NOT EXISTS staff_email_idx ON public.staff(email);
 
-  if not exists (
-    select 1 from information_schema.columns
-    where table_name = 'staff' and column_name = 'updated_at'
-  ) then
-    alter table staff add column updated_at timestamptz not null default now();
-  end if;
-end $$;
-
-create index if not exists staff_outlet_id_idx on staff(outlet_id);
-create index if not exists staff_email_idx on staff(email);
-create index if not exists staff_updated_at_idx on staff(updated_at);
-
--- ============================================================
--- SALES
--- ============================================================
-create table if not exists sales (
-  id               uuid primary key default gen_random_uuid(),
-  outlet_id        uuid not null references outlets(id) on delete cascade,
-  receipt_number   text not null,
-  items            jsonb not null default '[]',
-  subtotal         numeric(12,2) not null,
-  tax_amount       numeric(12,2) not null default 0,
-  discount_amount  numeric(12,2) not null default 0,
-  total            numeric(12,2) not null,
-  amount_paid      numeric(12,2) not null,
-  change           numeric(12,2) not null default 0,
-  payment_method   text not null check (payment_method in ('cash','card','transfer','pos','wallet')),
-  status           text not null check (status in ('completed','refunded','void')) default 'completed',
-  customer_id      uuid references customers(id) on delete set null,
-  customer_name    text,
-  staff_id         uuid references staff(id) on delete set null,
-  staff_name       text,
-  note             text,
-  created_at       timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.sales (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id       uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  receipt_number  text NOT NULL,
+  items           jsonb NOT NULL DEFAULT '[]',
+  subtotal        numeric(12,2) NOT NULL,
+  tax_amount      numeric(12,2) NOT NULL DEFAULT 0,
+  discount_amount numeric(12,2) NOT NULL DEFAULT 0,
+  total           numeric(12,2) NOT NULL,
+  amount_paid     numeric(12,2) NOT NULL,
+  change          numeric(12,2) NOT NULL DEFAULT 0,
+  payment_method  text NOT NULL CHECK (payment_method IN ('cash','card','transfer','pos','wallet')),
+  status          text NOT NULL CHECK (status IN ('completed','refunded','void')) DEFAULT 'completed',
+  customer_id     uuid REFERENCES public.customers(id) ON DELETE SET NULL,
+  customer_name   text,
+  staff_id        uuid REFERENCES public.staff(id) ON DELETE SET NULL,
+  staff_name      text,
+  note            text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT sales_non_negative_amounts CHECK (subtotal >= 0 AND tax_amount >= 0 AND discount_amount >= 0 AND total >= 0 AND amount_paid >= 0 AND change >= 0),
+  CONSTRAINT sales_outlet_receipt_unique UNIQUE (outlet_id, receipt_number)
 );
 
-create index if not exists sales_outlet_id_idx on sales(outlet_id);
-create index if not exists sales_created_at_idx on sales(created_at);
-create index if not exists sales_receipt_number_idx on sales(receipt_number);
+CREATE INDEX IF NOT EXISTS sales_outlet_id_idx ON public.sales(outlet_id);
+CREATE INDEX IF NOT EXISTS sales_created_at_idx ON public.sales(created_at);
+CREATE INDEX IF NOT EXISTS sales_receipt_number_idx ON public.sales(receipt_number);
 
--- ============================================================
--- EXPENSES
--- ============================================================
-create table if not exists expenses (
-  id            uuid primary key default gen_random_uuid(),
-  outlet_id     uuid not null references outlets(id) on delete cascade,
-  category      text not null,
-  amount        numeric(12,2) not null,
-  description   text not null,
-  expense_date  date not null,
-  staff_id      uuid references staff(id) on delete set null,
-  created_at    timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.expenses (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id    uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  category     text NOT NULL,
+  amount       numeric(12,2) NOT NULL,
+  description  text NOT NULL,
+  expense_date date NOT NULL,
+  staff_id     uuid REFERENCES public.staff(id) ON DELETE SET NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT expenses_positive_amount CHECK (amount > 0)
 );
 
-create index if not exists expenses_outlet_id_idx on expenses(outlet_id);
-create index if not exists expenses_date_idx on expenses(expense_date);
+CREATE INDEX IF NOT EXISTS expenses_outlet_id_idx ON public.expenses(outlet_id);
+CREATE INDEX IF NOT EXISTS expenses_date_idx ON public.expenses(expense_date);
 
--- ============================================================
--- STOCK MOVEMENTS
--- ============================================================
-create table if not exists stock_movements (
-  id           uuid primary key default gen_random_uuid(),
-  outlet_id    uuid not null references outlets(id) on delete cascade,
-  product_id   uuid not null references products(id) on delete cascade,
-  product_name text not null,
-  type         text not null check (type in ('in','out','adjust','sale','return')),
-  qty          integer not null,
-  prev_stock   integer not null,
-  new_stock    integer not null,
+CREATE TABLE IF NOT EXISTS public.stock_movements (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id    uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  product_id   uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  product_name text NOT NULL,
+  type         text NOT NULL CHECK (type IN ('in','out','adjust','sale','return')),
+  qty          integer NOT NULL,
+  prev_stock   integer NOT NULL,
+  new_stock    integer NOT NULL,
   note         text,
-  sale_id      uuid references sales(id) on delete set null,
-  created_at   timestamptz not null default now()
+  sale_id      uuid REFERENCES public.sales(id) ON DELETE SET NULL,
+  created_at   timestamptz NOT NULL DEFAULT now()
 );
 
-create index if not exists stock_movements_outlet_id_idx on stock_movements(outlet_id);
-create index if not exists stock_movements_product_id_idx on stock_movements(product_id);
+CREATE INDEX IF NOT EXISTS stock_movements_outlet_id_idx ON public.stock_movements(outlet_id);
+CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON public.stock_movements(product_id);
 
--- ============================================================
--- ROW LEVEL SECURITY
--- ============================================================
--- Every user (merchant or staff) authenticates via Supabase Auth.
--- auth.uid() is their Supabase user ID.
---
--- Access rules:
---   - Merchants can access all data belonging to their outlets.
---   - Staff can access only their assigned outlet's data.
---   - A user who is NEITHER a merchant nor active staff sees nothing.
+CREATE TABLE IF NOT EXISTS public.api_rate_limits (
+  id         bigserial PRIMARY KEY,
+  actor_id   uuid NOT NULL,
+  action     text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS api_rate_limits_lookup_idx ON public.api_rate_limits(actor_id, action, created_at DESC);
+
+-- 2. ACCESS RESTRICTIONS & LEGACY SECURITY CLEANUP
 -- ============================================================
 
--- First, disable RLS on all tables (clean slate)
-alter table if exists merchants disable row level security;
-alter table if exists outlets disable row level security;
-alter table if exists categories disable row level security;
-alter table if exists products disable row level security;
-alter table if exists customers disable row level security;
-alter table if exists staff disable row level security;
-alter table if exists sales disable row level security;
-alter table if exists expenses disable row level security;
-alter table if exists stock_movements disable row level security;
+REVOKE ALL ON public.api_rate_limits FROM anon, authenticated;
+REVOKE ALL (password_hash) ON TABLE public.merchants FROM anon, authenticated;
+REVOKE ALL (pin) ON TABLE public.staff FROM anon, authenticated;
 
--- Then enable RLS on all tables
-alter table merchants enable row level security;
-alter table outlets enable row level security;
-alter table categories enable row level security;
-alter table products enable row level security;
-alter table customers enable row level security;
-alter table staff enable row level security;
-alter table sales enable row level security;
-alter table expenses enable row level security;
-alter table stock_movements enable row level security;
+-- 3. AUTOMATED MERCHANT PROFILING
+-- ============================================================
 
+CREATE OR REPLACE FUNCTION public.create_merchant_profile()
+RETURNS trigger 
+LANGUAGE plpgsql 
+SECURITY DEFINER 
+SET search_path = public, pg_temp AS $$
+BEGIN
+  INSERT INTO public.merchants (
+    id, business_name, owner_name, email, phone, tier,
+    subscription_status, subscription_expiry, currency, tax_rate
+  ) VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'business_name', 'New business'),
+    COALESCE(new.raw_user_meta_data->>'owner_name', 'Merchant'),
+    LOWER(new.email),
+    COALESCE(new.raw_user_meta_data->>'phone', ''),
+    COALESCE(new.raw_user_meta_data->>'tier', 'basic'),
+    'trial', NOW() + INTERVAL '30 days', 'NGN', 7.5
+  ) ON CONFLICT (id) DO NOTHING;
+  RETURN new;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_merchant ON auth.users;
+CREATE TRIGGER on_auth_user_created_merchant
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.create_merchant_profile();
+
+-- Backfill legacy users
+INSERT INTO public.merchants (
+  id, business_name, owner_name, email, phone, tier,
+  subscription_status, subscription_expiry, currency, tax_rate
+)
+SELECT
+  u.id,
+  COALESCE(u.raw_user_meta_data->>'business_name', split_part(u.email, '@', 1)),
+  COALESCE(u.raw_user_meta_data->>'owner_name', split_part(u.email, '@', 1)),
+  LOWER(u.email),
+  COALESCE(u.raw_user_meta_data->>'phone', ''),
+  COALESCE(u.raw_user_meta_data->>'tier', 'basic'),
+  'trial', NOW() + INTERVAL '30 days', 'NGN', 7.5
+FROM auth.users u
+ON CONFLICT (id) DO NOTHING;
+
+-- 4. RLS HELPER FUNCTIONS
 -- ============================================================
--- Helper: is the current user an active staff member of a given outlet?
--- ============================================================
-create or replace function is_staff_of_outlet(outlet_id uuid)
-returns boolean
-language sql
-stable
-security definer
-as $$
-  select exists (
-    select 1 from staff
-    where staff.id::text = auth.uid()::text
-      and staff.outlet_id = $1
-      and staff.is_active = true
+
+CREATE OR REPLACE FUNCTION public.is_staff_of_outlet(outlet_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.staff
+    WHERE id = auth.uid()
+      AND staff.outlet_id = $1
+      AND staff.is_active = true
   );
 $$;
 
--- ============================================================
--- Helper: is the current user the merchant who owns a given outlet?
--- ============================================================
-create or replace function is_merchant_of_outlet(outlet_id uuid)
-returns boolean
-language sql
-stable
-security definer
-as $$
-  select exists (
-    select 1 from outlets o
-    where o.id = $1
-      and o.merchant_id::text = auth.uid()::text
+CREATE OR REPLACE FUNCTION public.is_merchant_of_outlet(outlet_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.outlets o
+    WHERE o.id = $1
+      AND o.merchant_id = auth.uid()
   );
 $$;
 
--- ============================================================
--- Helper: can the current user access a given outlet?
--- (either they're staff of that outlet OR the merchant who owns it)
--- ============================================================
-create or replace function can_access_outlet(outlet_id uuid)
-returns boolean
-language sql
-stable
-security definer
-as $$
-  select is_staff_of_outlet($1) or is_merchant_of_outlet($1);
+CREATE OR REPLACE FUNCTION public.can_access_outlet(outlet_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+  SELECT public.is_staff_of_outlet($1) OR public.is_merchant_of_outlet($1);
 $$;
 
--- ============================================================
--- Secure terminal pairing helpers
+-- 5. ROW LEVEL SECURITY POLICIES
 -- ============================================================
 
-create or replace function pair_terminal_outlet(
-  pair_code text,
-  setup_pin_hash text
-)
-returns jsonb
-language sql
-security definer
-stable
-as $$
-  select jsonb_build_object(
-    'outlet', jsonb_build_object(
-      'id', o.id,
-      'merchant_id', o.merchant_id,
-      'outlet_code', o.outlet_code,
-      'name', o.name,
-      'address', o.address,
-      'phone', o.phone,
-      'currency', o.currency,
-      'is_active', o.is_active,
-      'tax_enabled', o.tax_enabled,
-      'receipt_footer', o.receipt_footer,
-      'created_at', o.created_at,
-      'updated_at', o.updated_at
-    ),
-    'staff', coalesce(jsonb_agg(jsonb_build_object(
-      'id', s.id,
-      'outlet_id', s.outlet_id,
-      'name', s.name,
-      'email', s.email,
-      'phone', s.phone,
-      'role', s.role,
-      'is_active', s.is_active,
-      'created_at', s.created_at,
-      'updated_at', s.updated_at
-    )) filter (where s.id is not null), '[]')
-  )
-  from outlets o
-  left join staff s on s.outlet_id = o.id and s.is_active
-  where upper(o.outlet_code) = upper(pair_code)
-    and o.pin = setup_pin_hash
-    and o.is_active
-  group by
-    o.id,
-    o.merchant_id,
-    o.outlet_code,
-    o.name,
-    o.address,
-    o.phone,
-    o.currency,
-    o.pin,
-    o.is_active,
-    o.tax_enabled,
-    o.receipt_footer,
-    o.created_at,
-    o.updated_at;
+ALTER TABLE public.merchants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.outlets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
+
+-- MERCHANTS: View/update own account profile only
+DROP POLICY IF EXISTS "merchants_own_data" ON public.merchants;
+CREATE POLICY "merchants_own_data" ON public.merchants
+  FOR ALL USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- OUTLETS: Merchant full administration; staff read-only
+DROP POLICY IF EXISTS "outlets_select" ON public.outlets;
+DROP POLICY IF EXISTS "outlets_merchant_insert" ON public.outlets;
+DROP POLICY IF EXISTS "outlets_merchant_update" ON public.outlets;
+DROP POLICY IF EXISTS "outlets_merchant_delete" ON public.outlets;
+
+CREATE POLICY "outlets_select" ON public.outlets FOR SELECT
+  USING (merchant_id = auth.uid() OR public.is_staff_of_outlet(id));
+
+CREATE POLICY "outlets_merchant_insert" ON public.outlets FOR INSERT
+  WITH CHECK (merchant_id = auth.uid());
+
+CREATE POLICY "outlets_merchant_update" ON public.outlets FOR UPDATE
+  USING (merchant_id = auth.uid()) WITH CHECK (merchant_id = auth.uid());
+
+CREATE POLICY "outlets_merchant_delete" ON public.outlets FOR DELETE
+  USING (merchant_id = auth.uid());
+
+-- STAFF: Merchant manages account rows; staff members can read self/outlet team
+DROP POLICY IF EXISTS "staff_select" ON public.staff;
+DROP POLICY IF EXISTS "staff_merchant_insert" ON public.staff;
+DROP POLICY IF EXISTS "staff_merchant_update" ON public.staff;
+DROP POLICY IF EXISTS "staff_merchant_delete" ON public.staff;
+
+CREATE POLICY "staff_select" ON public.staff FOR SELECT
+  USING (id = auth.uid() OR public.is_merchant_of_outlet(outlet_id));
+
+CREATE POLICY "staff_merchant_insert" ON public.staff FOR INSERT
+  WITH CHECK (public.is_merchant_of_outlet(outlet_id));
+
+CREATE POLICY "staff_merchant_update" ON public.staff FOR UPDATE
+  USING (public.is_merchant_of_outlet(outlet_id))
+  WITH CHECK (public.is_merchant_of_outlet(outlet_id));
+
+CREATE POLICY "staff_merchant_delete" ON public.staff FOR DELETE
+  USING (public.is_merchant_of_outlet(outlet_id));
+
+-- STANDARD OUTLET-LEVEL TABLES
+DROP POLICY IF EXISTS "categories_access" ON public.categories;
+CREATE POLICY "categories_access" ON public.categories
+  FOR ALL USING (public.can_access_outlet(outlet_id))
+  WITH CHECK (public.can_access_outlet(outlet_id));
+
+DROP POLICY IF EXISTS "products_access" ON public.products;
+CREATE POLICY "products_access" ON public.products
+  FOR ALL USING (public.can_access_outlet(outlet_id))
+  WITH CHECK (public.can_access_outlet(outlet_id));
+
+DROP POLICY IF EXISTS "customers_access" ON public.customers;
+CREATE POLICY "customers_access" ON public.customers
+  FOR ALL USING (public.can_access_outlet(outlet_id))
+  WITH CHECK (public.can_access_outlet(outlet_id));
+
+DROP POLICY IF EXISTS "expenses_access" ON public.expenses;
+CREATE POLICY "expenses_access" ON public.expenses
+  FOR ALL USING (public.can_access_outlet(outlet_id))
+  WITH CHECK (public.can_access_outlet(outlet_id));
+
+DROP POLICY IF EXISTS "stock_movements_access" ON public.stock_movements;
+CREATE POLICY "stock_movements_access" ON public.stock_movements
+  FOR ALL USING (public.can_access_outlet(outlet_id))
+  WITH CHECK (public.can_access_outlet(outlet_id));
+
+-- SALES: Read-only via client. Writes managed exclusively by record_sale
+DROP POLICY IF EXISTS "sales_read_access" ON public.sales;
+CREATE POLICY "sales_read_access" ON public.sales FOR SELECT
+  USING (public.can_access_outlet(outlet_id));
+
+-- 6. AUDIT & CHECKOUT TRANSACTION ENGINE
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.set_expense_author()
+RETURNS trigger 
+LANGUAGE plpgsql 
+SECURITY DEFINER 
+SET search_path = public, pg_temp AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND EXISTS (SELECT 1 FROM public.staff WHERE id = auth.uid() AND outlet_id = new.outlet_id AND is_active) THEN
+    new.staff_id := auth.uid();
+  END IF;
+  RETURN new;
+END;
 $$;
 
-create or replace function fetch_paired_outlet_staff(
-  pair_code text,
-  setup_pin_hash text
-)
-returns jsonb
-language sql
-security definer
-stable
-as $$
-  select coalesce(jsonb_agg(jsonb_build_object(
-    'id', s.id,
-    'outlet_id', s.outlet_id,
-    'name', s.name,
-    'email', s.email,
-    'phone', s.phone,
-    'role', s.role,
-    'is_active', s.is_active,
-    'created_at', s.created_at,
-    'updated_at', s.updated_at
-  )), '[]')
-  from outlets o
-  join staff s on s.outlet_id = o.id
-  where upper(o.outlet_code) = upper(pair_code)
-    and o.pin = setup_pin_hash
-    and o.is_active
-    and s.is_active;
+DROP TRIGGER IF EXISTS expense_author_before_write ON public.expenses;
+CREATE TRIGGER expense_author_before_write 
+  BEFORE INSERT OR UPDATE ON public.expenses
+  FOR EACH ROW EXECUTE FUNCTION public.set_expense_author();
+
+CREATE OR REPLACE FUNCTION public.record_sale(
+  p_outlet_id uuid,
+  p_items jsonb,
+  p_payment_method text,
+  p_amount_paid numeric,
+  p_customer_id uuid DEFAULT null,
+  p_note text DEFAULT null
+) RETURNS public.sales
+LANGUAGE plpgsql 
+SECURITY DEFINER 
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_staff           public.staff%rowtype;
+  v_outlet          public.outlets%rowtype;
+  v_merchant        public.merchants%rowtype;
+  v_customer_name   text := null;
+  v_item            jsonb;
+  v_product         public.products%rowtype;
+  v_qty             integer;
+  v_discount        numeric;
+  v_subtotal        numeric := 0;
+  v_discount_total numeric := 0;
+  v_tax             numeric := 0;
+  v_total           numeric := 0;
+  v_sale            public.sales%rowtype;
+  v_items           jsonb := '[]'::jsonb;
+BEGIN
+  -- 1. Input Validation
+  IF jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 OR jsonb_array_length(p_items) > 100 THEN
+    RAISE EXCEPTION 'A sale must contain between 1 and 100 items' USING errcode = '22023';
+  END IF;
+  
+  IF p_payment_method NOT IN ('cash','card','transfer','pos','wallet') OR p_amount_paid < 0 THEN
+    RAISE EXCEPTION 'Invalid payment details provided' USING errcode = '22023';
+  END IF;
+
+  -- 2. Context & Permission Verification
+  SELECT * INTO v_staff FROM public.staff WHERE id = auth.uid() AND outlet_id = p_outlet_id AND is_active;
+  IF NOT FOUND THEN 
+    RAISE EXCEPTION 'Active staff authentication required' USING errcode = '42501'; 
+  END IF;
+
+  SELECT * INTO v_outlet FROM public.outlets WHERE id = p_outlet_id AND is_active;
+  IF NOT FOUND THEN 
+    RAISE EXCEPTION 'Target outlet is disabled or inactive' USING errcode = '42501'; 
+  END IF;
+
+  SELECT * INTO v_merchant FROM public.merchants WHERE id = v_outlet.merchant_id;
+  IF v_merchant.subscription_status NOT IN ('active', 'trial') OR v_merchant.subscription_expiry < NOW() THEN
+    RAISE EXCEPTION 'Merchant subscription is inactive or expired' USING errcode = '42501';
+  END IF;
+
+  IF p_customer_id IS NOT NULL THEN
+    SELECT name INTO v_customer_name FROM public.customers WHERE id = p_customer_id AND outlet_id = p_outlet_id;
+    IF NOT FOUND THEN 
+      RAISE EXCEPTION 'Selected customer is not registered to this outlet' USING errcode = '22023'; 
+    END IF;
+  END IF;
+
+  -- 3. Item Calculation & Inventory Lock
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    v_qty := (v_item->>'quantity')::integer;
+    v_discount := COALESCE((v_item->>'discount_percent')::numeric, 0);
+    
+    IF v_qty IS NULL OR v_qty < 1 OR v_qty > 10000 OR v_discount < 0 OR v_discount > 100 THEN
+      RAISE EXCEPTION 'Invalid item line values: quantity or discount out of range' USING errcode = '22023';
+    END IF;
+
+    SELECT * INTO v_product FROM public.products
+      WHERE id = (v_item->>'product_id')::uuid AND outlet_id = p_outlet_id AND is_active FOR UPDATE;
+      
+    IF NOT FOUND THEN 
+      RAISE EXCEPTION 'Product ID % unavailable', (v_item->>'product_id') USING errcode = '22023'; 
+    END IF;
+    
+    IF v_product.track_stock AND v_product.stock < v_qty THEN
+      RAISE EXCEPTION 'Insufficient stock for % (Available: %, Requested: %)', v_product.name, v_product.stock, v_qty USING errcode = '22023';
+    END IF;
+
+    v_subtotal := v_subtotal + (v_product.price * v_qty);
+    v_discount_total := v_discount_total + (v_product.price * v_qty * v_discount / 100);
+    
+    v_items := v_items || jsonb_build_array(jsonb_build_object(
+      'productId', v_product.id, 
+      'productName', v_product.name, 
+      'sku', v_product.sku, 
+      'qty', v_qty, 
+      'unitPrice', v_product.price, 
+      'discount', v_discount, 
+      'total', v_product.price * v_qty * (1 - v_discount / 100)
+    ));
+
+    IF v_product.track_stock THEN
+      UPDATE public.products SET stock = stock - v_qty, updated_at = NOW() WHERE id = v_product.id;
+    END IF;
+  END LOOP;
+
+  -- 4. Totals Calculation
+  v_tax := CASE WHEN v_outlet.tax_enabled THEN ROUND((v_subtotal - v_discount_total) * 0.075, 2) ELSE 0 END;
+  v_total := ROUND(v_subtotal - v_discount_total + v_tax, 2);
+
+  IF p_amount_paid < v_total THEN 
+    RAISE EXCEPTION 'Amount paid (%) insufficient for total (%)', p_amount_paid, v_total USING errcode = '22023'; 
+  END IF;
+
+  -- 5. Record Creation
+  INSERT INTO public.sales(
+    outlet_id, receipt_number, items, subtotal, tax_amount, 
+    discount_amount, total, amount_paid, change, payment_method, 
+    customer_id, customer_name, staff_id, staff_name, note
+  ) VALUES (
+    p_outlet_id, 
+    UPPER(SUBSTR(p_outlet_id::text, 1, 4)) || '-' || TO_CHAR(CLOCK_TIMESTAMP(), 'YYMMDDHH24MISSMS'), 
+    v_items, v_subtotal, v_tax, v_discount_total, v_total, p_amount_paid, 
+    p_amount_paid - v_total, p_payment_method, p_customer_id, v_customer_name, 
+    v_staff.id, v_staff.name, LEFT(p_note, 500)
+  ) RETURNING * INTO v_sale;
+
+  -- 6. Stock Movement Auditing
+  FOR v_item IN SELECT * FROM jsonb_array_elements(v_items) LOOP
+    SELECT * INTO v_product FROM public.products WHERE id = (v_item->>'productId')::uuid;
+    IF v_product.track_stock THEN
+      INSERT INTO public.stock_movements(
+        outlet_id, product_id, product_name, type, qty, prev_stock, new_stock, sale_id
+      ) VALUES (
+        p_outlet_id, v_product.id, v_product.name, 'sale', 
+        -((v_item->>'qty')::integer), 
+        v_product.stock + ((v_item->>'qty')::integer), 
+        v_product.stock, v_sale.id
+      );
+    END IF;
+  END LOOP;
+
+  -- 7. Update Customer Statistics
+  IF p_customer_id IS NOT NULL THEN
+    UPDATE public.customers 
+    SET total_spent = total_spent + v_total,
+        visit_count = visit_count + 1,
+        loyalty_points = loyalty_points + FLOOR(v_total / 100)::integer,
+        updated_at = NOW()
+    WHERE id = p_customer_id;
+  END IF;
+
+  RETURN v_sale;
+END;
 $$;
 
--- Create a small attempts table for rate-limiting PIN verification
-create table if not exists staff_pin_attempts (
-  id bigserial primary key,
-  staff_id uuid,
-  email text,
-  ip inet,
-  attempted_at timestamptz not null default now(),
-  success boolean not null
-);
+REVOKE ALL ON FUNCTION public.record_sale(uuid, jsonb, text, numeric, uuid, text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.record_sale(uuid, jsonb, text, numeric, uuid, text) TO authenticated;
 
--- ============================================================
--- RPC: Verify staff PIN with rate limiting (security definer)
--- Returns minimal staff info when the provided PIN matches the stored value.
--- Accepts optional `client_ip` (inet) for logging and blocking by IP.
--- Limits: configurable here (defaults: 5 attempts / 5 minutes).
--- ============================================================
--- Remove older overloads to avoid ambiguous function selection errors
-drop function if exists verify_staff_pin(text, text);
-drop function if exists verify_staff_pin(text, text, inet);
-
-create or replace function verify_staff_pin(
-  email_in text,
-  pin_input text,
-  client_ip inet default null
-)
-returns table(
-  id uuid,
-  outlet_id uuid,
-  name text,
-  email text,
-  role text,
-  is_active boolean
-)
-language plpgsql
-security definer
-volatile
-as $$
-declare
-  v_staff record;
-  v_failed_count int := 0;
-  v_time_window interval := interval '5 minutes';
-  v_max_attempts int := 5;
-begin
-  select * into v_staff from staff s where lower(s.email) = lower(email_in) limit 1;
-
-  -- If no staff row, record a failed attempt and return no rows
-  if not found then
-    insert into staff_pin_attempts(staff_id, email, ip, success)
-      values (null, lower(email_in), client_ip, false);
-    return;
-  end if;
-
-  -- Count recent failed attempts for this staff or IP
-  select count(*) into v_failed_count from staff_pin_attempts a
-    where ((a.staff_id = v_staff.id) or (lower(a.email) = lower(email_in)) or (client_ip is not null and a.ip = client_ip))
-      and a.success = false
-      and a.attempted_at > now() - v_time_window;
-
-  if v_failed_count >= v_max_attempts then
-    raise exception 'Too many failed PIN attempts. Try again later.';
-  end if;
-
-  if not v_staff.is_active then
-    insert into staff_pin_attempts(staff_id, email, ip, success)
-      values (v_staff.id, lower(email_in), client_ip, false);
-    raise exception 'Staff account is inactive.';
-  end if;
-
-  -- Check raw or hashed PIN
-  if v_staff.pin = pin_input
-     or encode(digest(pin_input || 'naijapospro_salt_v1', 'sha256'), 'hex') = v_staff.pin
-  then
-    insert into staff_pin_attempts(staff_id, email, ip, success)
-      values (v_staff.id, lower(email_in), client_ip, true);
-    return query
-      select v_staff.id, v_staff.outlet_id, v_staff.name, v_staff.email, v_staff.role, v_staff.is_active;
-  else
-    insert into staff_pin_attempts(staff_id, email, ip, success)
-      values (v_staff.id, lower(email_in), client_ip, false);
-    return;
-  end if;
-end;
-$$;
-
--- ============================================================
--- POLICIES
+-- 7. VIEWS
 -- ============================================================
 
--- MERCHANTS: only the merchant themselves can access their own row
-drop policy if exists "merchants_own_data" on merchants;
-create policy "merchants_own_data" on merchants
-  for all using (auth.uid()::text = id::text)
-  with check (auth.uid()::text = id::text);
-
--- OUTLETS: merchant of the outlet OR staff of the outlet
- drop policy if exists "outlets_access_select" on outlets;
- create policy "outlets_access_select" on outlets
-   for select using (
-     merchant_id::text = auth.uid()::text
-     or is_staff_of_outlet(id)
-   );
- drop policy if exists "outlets_access_insert" on outlets;
- create policy "outlets_access_insert" on outlets
-   for insert with check (
-     merchant_id::text = auth.uid()::text
-   );
- drop policy if exists "outlets_access_update" on outlets;
- create policy "outlets_access_update" on outlets
-   for update using (
-     merchant_id::text = auth.uid()::text
-     or is_staff_of_outlet(id)
-   ) with check (
-     merchant_id::text = auth.uid()::text
-   );
- drop policy if exists "outlets_access_delete" on outlets;
- create policy "outlets_access_delete" on outlets
-   for delete using (
-     merchant_id::text = auth.uid()::text
-     or is_staff_of_outlet(id)
-   );
-
--- STAFF: merchant of the staff's outlet OR the staff member themselves
- drop policy if exists "staff_access_select" on staff;
- create policy "staff_access_select" on staff
-   for select using (
-     id::text = auth.uid()::text
-     or is_merchant_of_outlet(outlet_id)
-   );
- drop policy if exists "staff_access_insert" on staff;
- create policy "staff_access_insert" on staff
-   for insert with check (
-     is_merchant_of_outlet(outlet_id)
-   );
- drop policy if exists "staff_access_update" on staff;
- create policy "staff_access_update" on staff
-   for update using (
-     id::text = auth.uid()::text
-     or is_merchant_of_outlet(outlet_id)
-   ) with check (
-     is_merchant_of_outlet(outlet_id)
-   );
- drop policy if exists "staff_access_delete" on staff;
- create policy "staff_access_delete" on staff
-   for delete using (
-     id::text = auth.uid()::text
-     or is_merchant_of_outlet(outlet_id)
-   );
-
- drop policy if exists "categories_access" on categories;
- create policy "categories_access" on categories
-   for all using (can_access_outlet(outlet_id))
-   with check (can_access_outlet(outlet_id));
-
--- PRODUCTS: can_access_outlet
-drop policy if exists "products_access" on products;
-create policy "products_access" on products
-  for all using (can_access_outlet(outlet_id))
-  with check (can_access_outlet(outlet_id));
-
--- CUSTOMERS: can_access_outlet
-drop policy if exists "customers_access" on customers;
-create policy "customers_access" on customers
-  for all using (can_access_outlet(outlet_id))
-  with check (can_access_outlet(outlet_id));
-
--- SALES: can_access_outlet
-drop policy if exists "sales_access" on sales;
-create policy "sales_access" on sales
-  for all using (can_access_outlet(outlet_id))
-  with check (can_access_outlet(outlet_id));
-
--- EXPENSES: can_access_outlet
-drop policy if exists "expenses_access" on expenses;
-create policy "expenses_access" on expenses
-  for all using (can_access_outlet(outlet_id))
-  with check (can_access_outlet(outlet_id));
-
--- STOCK MOVEMENTS: can_access_outlet
-drop policy if exists "stock_movements_access" on stock_movements;
-create policy "stock_movements_access" on stock_movements
-  for all using (can_access_outlet(outlet_id))
-  with check (can_access_outlet(outlet_id));
-
--- ============================================================
--- IMPORTANT: Supabase Project Settings
--- ============================================================
--- Go to your Supabase Dashboard → Authentication → Settings:
---   1. Disable "Confirm email" (or enable "Allow unverified email logins")
---      This is needed so merchants can create staff accounts via signUp()
---      without staff needing to verify their email first.
---   2. Under "Email Auth", disable "Enable email confirmations"
--- ============================================================
-
--- ============================================================
--- Useful views
--- ============================================================
-
-create or replace view outlet_daily_summary as
-select
-  o.id as outlet_id,
-  o.name as outlet_name,
+CREATE OR REPLACE VIEW public.outlet_daily_summary 
+WITH (security_invoker = true) AS
+SELECT
+  o.id AS outlet_id,
+  o.name AS outlet_name,
   o.merchant_id,
-  date_trunc('day', s.created_at) as sale_date,
-  count(s.id) as transaction_count,
-  sum(s.total) as revenue,
-  sum(s.discount_amount) as total_discounts,
-  sum(s.tax_amount) as total_tax
-from outlets o
-left join sales s on s.outlet_id = o.id and s.status = 'completed'
-group by o.id, o.name, o.merchant_id, date_trunc('day', s.created_at);
-
--- ============================================================
--- END OF SCHEMA
--- ============================================================
+  DATE_TRUNC('day', s.created_at) AS sale_date,
+  COUNT(s.id) AS transaction_count,
+  SUM(s.total) AS revenue,
+  SUM(s.discount_amount) AS total_discounts,
+  SUM(s.tax_amount) AS total_tax
+FROM public.outlets o
+LEFT JOIN public.sales s ON s.outlet_id = o.id AND s.status = 'completed'
+GROUP BY o.id, o.name, o.merchant_id, DATE_TRUNC('day', s.created_at);
