@@ -47,7 +47,7 @@ export const formatDateShort = (iso: string): string => {
 
 export const hashPin = async (pin: string): Promise<string> => {
   const encoder = new TextEncoder();
-  const data = encoder.encode(pin + "KasihPOS pro_salt_v1");
+  const data = encoder.encode(pin + "STOCKURA pro_salt_v1");
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -63,7 +63,7 @@ export const verifyPin = async (
 
 export const hashPassword = async (password: string): Promise<string> => {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password + "KasihPOS pro_merchant_salt_v1");
+  const data = encoder.encode(password + "STOCKURA pro_merchant_salt_v1");
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");

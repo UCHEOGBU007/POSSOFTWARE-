@@ -114,7 +114,7 @@
 //               <path d="M16 10a4 4 0 0 1-8 0" />
 //             </svg>
 //           </div>
-//           <p className="text-pos-text font-semibold">KasihPOS Pro</p>
+//           <p className="text-pos-text font-semibold">STOCKURA Pro</p>
 //           <p className="text-pos-muted text-xs mt-1">Loading...</p>
 //         </div>
 //       </div>
@@ -154,6 +154,7 @@ import { POSProvider } from "./contexts/POSContext";
 import { ToastProvider } from "./components/ui/Toast";
 import Layout from "./components/layout/Layout";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import logo from "@/assest/logo1.svg";
 
 // Auth Components & Route Guards
 import {
@@ -265,22 +266,8 @@ function AppInner() {
       <div className="fixed inset-0 bg-pos-bg flex items-center justify-center z-50">
         <div className="text-center">
           <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center mx-auto mb-4">
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <path d="M16 10a4 4 0 0 1-8 0" />
-            </svg>
+            <img src={logo} alt="Logo" className="h-50 w-50" />
           </div>
-          <p className="text-pos-text font-semibold">KasihPOS Pro</p>
           <p className="text-pos-muted text-xs mt-1">Loading...</p>
         </div>
       </div>

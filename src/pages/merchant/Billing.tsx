@@ -263,7 +263,7 @@
 //             Payment is processed via Bank transfer and Qris payments supported.
 //             Contact{" "}
 //             <span className="text-blue-400 font-medium">
-//               billing@KasihPOS .com
+//               billing@STOCKURA .com
 //             </span>{" "}
 //             for manual renewal.
 //           </p>
@@ -399,7 +399,7 @@ export default function BillingPage() {
             Payment is processed via Bank transfer and QRIS payments supported.
             Contact{" "}
             <span className="text-blue-400 font-medium">
-              billing@KasihPOS.com
+              billing@STOCKURA.com
             </span>{" "}
             for manual renewal or plan changes.
           </p>

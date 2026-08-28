@@ -72,7 +72,7 @@ export default function OutletSettings() {
                   Offline Data Management
                 </h3>
                 <p className="text-sm text-pos-muted">
-                  KasihPOS Pro stores data locally for offline use. Once data is
+                  STOCKURA Pro stores data locally for offline use. Once data is
                   synced to the cloud, you can clear it from the browser to free
                   up storage.
                 </p>

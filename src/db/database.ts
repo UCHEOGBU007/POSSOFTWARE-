@@ -23,7 +23,7 @@
 //   stockMovements!: Table<StockMovement>;
 
 //   constructor() {
-//     super("KasihPOS Pro");
+//     super("STOCKURA Pro");
 
 //     this.version(1).stores({
 //       merchants: "id, email, syncStatus",
@@ -74,7 +74,7 @@ export class POSDatabase extends Dexie {
   stockMovements!: Table<StockMovement>;
 
   constructor() {
-    super("KasihPOS Pro");
+    super("STOCKURA Pro");
 
     // Version 1 (Legacy schema)
     this.version(1).stores({

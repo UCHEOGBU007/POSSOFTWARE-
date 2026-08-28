@@ -28,6 +28,35 @@ export default function OutletDashboard() {
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
 
+  // useEffect(() => {
+  //   const load = async () => {
+  //     const todayStart = getTodayStart();
+  //     const sales = await db.sales
+  //       .where("outletId")
+  //       .equals(outlet.id)
+  //       .filter((s) => s.createdAt >= todayStart && s.status === "completed")
+  //       .toArray();
+  //     setTodaySales(
+  //       sales.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+  //     );
+
+  //     const products = await db.products
+  //       .where({ outletId: outlet.id, isActive: 1 })
+  //       .toArray();
+  //     setTotalProducts(products.length);
+  //     setLowStockProducts(
+  //       products.filter((p) => p.trackStock && p.stock <= p.lowStockAlert),
+  //     );
+
+  //     const custs = await db.customers
+  //       .where("outletId")
+  //       .equals(outlet.id)
+  //       .count();
+  //     setTotalCustomers(custs);
+  //   };
+  //   load();
+  // }, [outlet.id]);
+
   useEffect(() => {
     const load = async () => {
       const todayStart = getTodayStart();
@@ -40,12 +69,30 @@ export default function OutletDashboard() {
         sales.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       );
 
+      // 1. Fetch products using simple indexed query to prevent compound index failures
       const products = await db.products
-        .where({ outletId: outlet.id, isActive: 1 })
+        .where("outletId")
+        .equals(outlet.id)
         .toArray();
-      setTotalProducts(products.length);
+
+      // 2. Safely check for active status (handles boolean true, number 1, or undefined)
+      const activeProducts = products.filter(
+        (p) => Boolean(p.isActive) || p.isActive === undefined,
+      );
+
+      setTotalProducts(activeProducts.length);
+
+      // 3. Safely evaluate low stock with explicit numeric conversions
       setLowStockProducts(
-        products.filter((p) => p.trackStock && p.stock <= p.lowStockAlert),
+        activeProducts.filter((p) => {
+          const isTracking =
+            Boolean(p.trackStock) ||
+            (p as unknown as Record<string, unknown>).trackStock === 1;
+          const currentStock = Number(p.stock ?? 0);
+          const alertThreshold = Number(p.lowStockAlert ?? 0);
+
+          return isTracking && currentStock <= alertThreshold;
+        }),
       );
 
       const custs = await db.customers

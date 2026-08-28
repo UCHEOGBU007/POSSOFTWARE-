@@ -1,5 +1,7 @@
 // import { useEffect, useState } from "react";
 // import { Search, Eye, RotateCcw } from "lucide-react";
+
+// // Fixed: Cleaned up relative import pathing trees to use the absolute @/ alias
 // import { useAuth } from "@/contexts/AuthContext";
 // import { db } from "@/db/database";
 // import Header from "@/components/layout/Header";
@@ -58,6 +60,7 @@
 //     });
 //     const updatedSale = await db.sales.get(sale.id);
 //     if (updatedSale) await syncRecord("sales", updatedSale);
+
 //     // Restore stock
 //     for (const item of sale.items) {
 //       const prod = await db.products.get(item.productId);
@@ -280,10 +283,504 @@
 //   );
 // }
 
-import { useEffect, useState } from "react";
-import { Search, Eye, RotateCcw } from "lucide-react";
+// import { useEffect, useState } from "react";
+// import {
+//   Search,
+//   Eye,
+//   RotateCcw,
+//   FileSpreadsheet,
+//   FileText,
+// } from "lucide-react";
 
-// Fixed: Cleaned up relative import pathing trees to use the absolute @/ alias
+// // Fixed: Cleaned up relative import pathing trees to use the absolute @/ alias
+// import { useAuth } from "@/contexts/AuthContext";
+// import { db } from "@/db/database";
+// import Header from "@/components/layout/Header";
+// import Input from "@/components/ui/Input";
+// import Badge from "@/components/ui/Badge";
+// import Modal from "@/components/ui/Modal";
+// import Button from "@/components/ui/Button";
+// import { useToast } from "@/components/ui/Toast";
+// import { syncRecord } from "@/lib/sync";
+// import { formatCurrency, formatDate } from "@/utils/helpers";
+// import type { Sale } from "@/types";
+
+// /**
+//  * SalesHistory Component
+//  * Provides a responsive, full-featured sales transaction log with search filtering,
+//  * date range querying, CSV/PDF export, receipt breakdown modal, and stock refund logic.
+//  */
+// export default function SalesHistory() {
+//   // ---------------------------------------------------------------------------
+//   // Context & Hooks
+//   // ---------------------------------------------------------------------------
+//   const { outletSession } = useAuth();
+//   const outlet = outletSession!.outlet;
+//   const { success } = useToast();
+
+//   // ---------------------------------------------------------------------------
+//   // State Management
+//   // ---------------------------------------------------------------------------
+//   /** Complete sales transactions loaded for the current outlet */
+//   const [sales, setSales] = useState<Sale[]>([]);
+//   /** Text search filter query for receipt number or customer name */
+//   const [search, setSearch] = useState("");
+//   /** Active sale record selected for modal inspection and refund handling */
+//   const [viewing, setViewing] = useState<Sale | null>(null);
+//   /** Date range filter boundaries (Format: YYYY-MM-DD) */
+//   const [dateFrom, setDateFrom] = useState("");
+//   const [dateTo, setDateTo] = useState("");
+
+//   // ---------------------------------------------------------------------------
+//   // Data Loading
+//   // ---------------------------------------------------------------------------
+//   /**
+//    * Loads sales records from Dexie IndexedDB filtered by current outlet ID,
+//    * sorted in descending order by creation timestamp.
+//    */
+//   const load = async () => {
+//     const data = await db.sales
+//       .where("outletId")
+//       .equals(outlet.id)
+//       .reverse()
+//       .sortBy("createdAt");
+//     setSales(data);
+//   };
+
+//   useEffect(() => {
+//     load();
+//   }, [outlet.id]);
+
+//   // ---------------------------------------------------------------------------
+//   // Data Filtering & Revenue Calculations
+//   // ---------------------------------------------------------------------------
+//   /**
+//    * Filter sales based on search input and date range inputs
+//    */
+//   const filtered = sales.filter((s) => {
+//     const q = search.toLowerCase();
+//     const matchQ =
+//       !q ||
+//       s.receiptNumber.toLowerCase().includes(q) ||
+//       (s.customerName ?? "").toLowerCase().includes(q);
+//     const matchFrom = !dateFrom || s.createdAt >= dateFrom;
+//     const matchTo = !dateTo || s.createdAt <= dateTo + "T23:59:59";
+//     return matchQ && matchFrom && matchTo;
+//   });
+
+//   /**
+//    * Calculate cumulative total revenue from all 'completed' sales in the filtered view
+//    */
+//   const totalRevenue = filtered
+//     .filter((s) => s.status === "completed")
+//     .reduce((sum, s) => sum + s.total, 0);
+
+//   // ---------------------------------------------------------------------------
+//   // Document / Report Export Handlers
+//   // ---------------------------------------------------------------------------
+//   /**
+//    * Export filtered sales data to a downloadable CSV document spreadsheet
+//    */
+//   const handleExportCSV = () => {
+//     if (filtered.length === 0) return;
+
+//     const headers = [
+//       "Receipt #",
+//       "Date",
+//       "Customer",
+//       "Items Count",
+//       "Payment Method",
+//       "Total Amount",
+//       "Status",
+//     ];
+
+//     const rows = filtered.map((s) => [
+//       `"${s.receiptNumber}"`,
+//       `"${formatDate(s.createdAt)}"`,
+//       `"${s.customerName ?? "Walk-in"}"`,
+//       s.items.length,
+//       `"${s.paymentMethod.toUpperCase()}"`,
+//       s.total,
+//       `"${s.status}"`,
+//     ]);
+
+//     const csvContent =
+//       "data:text/csv;charset=utf-8," +
+//       [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+
+//     const encodedUri = encodeURI(csvContent);
+//     const link = document.createElement("a");
+//     link.setAttribute("href", encodedUri);
+//     link.setAttribute(
+//       "download",
+//       `sales_history_${new Date().toISOString().slice(0, 10)}.csv`,
+//     );
+//     document.body.appendChild(link);
+//     link.click();
+//     document.body.removeChild(link);
+//     success("Sales report exported to CSV document.");
+//   };
+
+//   /**
+//    * Export filtered sales to a formatted PDF / printable document view
+//    */
+//   const handleExportPDF = () => {
+//     if (filtered.length === 0) return;
+
+//     const printWindow = window.open("", "_blank");
+//     if (!printWindow) return;
+
+//     const html = `
+//       <!DOCTYPE html>
+//       <html>
+//         <head>
+//           <title>Sales History Report</title>
+//           <style>
+//             body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #1e293b; background: #fff; }
+//             h1 { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
+//             p.meta { color: #64748b; font-size: 12px; margin-bottom: 20px; }
+//             table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+//             th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; }
+//             th { background-color: #f8fafc; font-weight: 600; color: #475569; text-transform: uppercase; font-size: 10px; }
+//             .right { text-align: right; }
+//             .mono { font-family: monospace; color: #2563eb; }
+//             .badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+//             .completed { background: #dcfce7; color: #166534; }
+//             .refunded { background: #fef3c7; color: #92400e; }
+//           </style>
+//         </head>
+//         <body>
+//           <h1>Sales History Report</h1>
+//           <p class="meta">Outlet: ${outlet.name || "Main Outlet"} | Generated: ${new Date().toLocaleString()} | Transactions: ${filtered.length} | Net Revenue: ${formatCurrency(totalRevenue)}</p>
+//           <table>
+//             <thead>
+//               <tr>
+//                 <th>Receipt #</th>
+//                 <th>Date</th>
+//                 <th>Customer</th>
+//                 <th>Items</th>
+//                 <th>Payment</th>
+//                 <th class="right">Total</th>
+//                 <th>Status</th>
+//               </tr>
+//             </thead>
+//             <tbody>
+//               ${filtered
+//                 .map(
+//                   (s) => `
+//                 <tr>
+//                   <td class="mono">${s.receiptNumber}</td>
+//                   <td>${formatDate(s.createdAt)}</td>
+//                   <td>${s.customerName ?? "Walk-in"}</td>
+//                   <td>${s.items.length}</td>
+//                   <td>${s.paymentMethod.toUpperCase()}</td>
+//                   <td class="right">${formatCurrency(s.total)}</td>
+//                   <td><span class="badge ${s.status}">${s.status}</span></td>
+//                 </tr>
+//               `,
+//                 )
+//                 .join("")}
+//             </tbody>
+//           </table>
+//           <script>
+//             window.onload = function() { window.print(); window.close(); };
+//           </script>
+//         </body>
+//       </html>
+//     `;
+
+//     printWindow.document.write(html);
+//     printWindow.document.close();
+//   };
+
+//   // ---------------------------------------------------------------------------
+//   // Action Handlers
+//   // ---------------------------------------------------------------------------
+//   /**
+//    * Process refund for a sale record: Updates status, syncs changes, and restores stock quantities
+//    */
+//   const handleRefund = async (sale: Sale) => {
+//     if (!confirm(`Refund sale ${sale.receiptNumber}?`)) return;
+
+//     // Update sale status in Dexie IndexedDB
+//     await db.sales.update(sale.id, {
+//       status: "refunded",
+//       syncStatus: "pending",
+//     });
+//     const updatedSale = await db.sales.get(sale.id);
+//     if (updatedSale) await syncRecord("sales", updatedSale);
+
+//     // Restore stock levels for products where inventory tracking is enabled
+//     for (const item of sale.items) {
+//       const prod = await db.products.get(item.productId);
+//       if (prod && prod.trackStock) {
+//         await db.products.update(item.productId, {
+//           stock: prod.stock + item.qty,
+//           syncStatus: "pending",
+//         });
+//         const updatedProduct = await db.products.get(item.productId);
+//         if (updatedProduct) await syncRecord("products", updatedProduct);
+//       }
+//     }
+//     success("Sale refunded and stock restored.");
+//     setViewing(null);
+//     load();
+//   };
+
+//   // ---------------------------------------------------------------------------
+//   // View Rendering (Responsive across Mobile, Tablet, Laptop, and Desktop)
+//   // ---------------------------------------------------------------------------
+//   return (
+//     <div className="w-full min-h-screen">
+//       {/* Top Header section */}
+//       <Header
+//         title="Sales History"
+//         subtitle={`${filtered.length} transactions · ${formatCurrency(totalRevenue)} revenue`}
+//       />
+
+//       <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
+//         {/* Controls Bar: Search, Date Range Pickers, and Export Buttons */}
+//         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+//           {/* Responsive Search & Date Pickers Grid */}
+//           <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center w-full md:w-auto">
+//             <Input
+//               placeholder="Search receipt or customer..."
+//               value={search}
+//               onChange={(e) => setSearch(e.target.value)}
+//               leftIcon={<Search size={15} />}
+//               className="w-full sm:w-64"
+//             />
+//             <div className="flex flex-row gap-2 w-full sm:w-auto">
+//               <Input
+//                 type="date"
+//                 value={dateFrom}
+//                 onChange={(e) => setDateFrom(e.target.value)}
+//                 className="w-1/2 sm:w-40"
+//               />
+//               <Input
+//                 type="date"
+//                 value={dateTo}
+//                 onChange={(e) => setDateTo(e.target.value)}
+//                 className="w-1/2 sm:w-40"
+//               />
+//             </div>
+//           </div>
+
+//           {/* Export Action Buttons (CSV Document & PDF Report) */}
+//           <div className="flex items-center gap-2 w-full md:w-auto">
+//             <Button
+//               variant="secondary"
+//               icon={<FileSpreadsheet size={15} />}
+//               onClick={handleExportCSV}
+//               className="flex-1 sm:flex-none justify-center text-xs"
+//             >
+//               Export CSV
+//             </Button>
+//             <Button
+//               variant="secondary"
+//               icon={<FileText size={15} />}
+//               onClick={handleExportPDF}
+//               className="flex-1 sm:flex-none justify-center text-xs"
+//             >
+//               Export PDF
+//             </Button>
+//           </div>
+//         </div>
+
+//         {/* Responsive Table Container with horizontal touch scroll */}
+//         <div className="bg-pos-card border border-pos-border rounded-xl overflow-hidden shadow-sm">
+//           <div className="overflow-x-auto w-full">
+//             <table className="w-full text-sm min-w-175">
+//               <thead>
+//                 <tr className="border-b border-pos-border bg-pos-bg/40">
+//                   {[
+//                     "Receipt #",
+//                     "Date",
+//                     "Customer",
+//                     "Items",
+//                     "Payment",
+//                     "Total",
+//                     "Status",
+//                     "",
+//                   ].map((h) => (
+//                     <th
+//                       key={h}
+//                       className="text-left px-4 py-3 text-xs font-medium text-pos-muted uppercase tracking-wider"
+//                     >
+//                       {h}
+//                     </th>
+//                   ))}
+//                 </tr>
+//               </thead>
+//               <tbody className="divide-y divide-pos-border">
+//                 {filtered.length === 0 ? (
+//                   <tr>
+//                     <td
+//                       colSpan={8}
+//                       className="px-4 py-12 text-center text-pos-muted"
+//                     >
+//                       No sales found.
+//                     </td>
+//                   </tr>
+//                 ) : (
+//                   filtered.map((sale) => (
+//                     <tr
+//                       key={sale.id}
+//                       className="hover:bg-pos-hover transition-colors"
+//                     >
+//                       <td className="px-4 py-3 font-mono text-xs text-blue-400 font-medium whitespace-nowrap">
+//                         {sale.receiptNumber}
+//                       </td>
+//                       <td className="px-4 py-3 text-pos-muted text-xs whitespace-nowrap">
+//                         {formatDate(sale.createdAt)}
+//                       </td>
+//                       <td className="px-4 py-3 text-pos-text">
+//                         {sale.customerName ?? "—"}
+//                       </td>
+//                       <td className="px-4 py-3 text-pos-muted">
+//                         {sale.items.length}
+//                       </td>
+//                       <td className="px-4 py-3">
+//                         <Badge variant="muted">
+//                           {sale.paymentMethod.toUpperCase()}
+//                         </Badge>
+//                       </td>
+//                       <td className="px-4 py-3 font-semibold text-pos-text whitespace-nowrap">
+//                         {formatCurrency(sale.total)}
+//                       </td>
+//                       <td className="px-4 py-3">
+//                         <Badge
+//                           variant={
+//                             sale.status === "completed"
+//                               ? "success"
+//                               : sale.status === "refunded"
+//                                 ? "warning"
+//                                 : "danger"
+//                           }
+//                           dot
+//                         >
+//                           {sale.status}
+//                         </Badge>
+//                       </td>
+//                       <td className="px-4 py-3 text-right">
+//                         <button
+//                           onClick={() => setViewing(sale)}
+//                           className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+//                           title="View Receipt Details"
+//                         >
+//                           <Eye size={15} />
+//                         </button>
+//                       </td>
+//                     </tr>
+//                   ))
+//                 )}
+//               </tbody>
+//             </table>
+//           </div>
+//         </div>
+//       </div>
+
+//       {/* Sale Details Modal */}
+//       <Modal
+//         open={!!viewing}
+//         onClose={() => setViewing(null)}
+//         title={`Receipt — ${viewing?.receiptNumber}`}
+//         size="sm"
+//         footer={
+//           viewing?.status === "completed" ? (
+//             <Button
+//               variant="danger"
+//               icon={<RotateCcw size={15} />}
+//               onClick={() => viewing && handleRefund(viewing)}
+//             >
+//               Process Refund
+//             </Button>
+//           ) : undefined
+//         }
+//       >
+//         {viewing && (
+//           <div className="space-y-4 text-sm">
+//             <div className="grid grid-cols-2 gap-3 text-xs">
+//               <div>
+//                 <p className="text-pos-muted">Date</p>
+//                 <p className="text-pos-text">{formatDate(viewing.createdAt)}</p>
+//               </div>
+//               <div>
+//                 <p className="text-pos-muted">Payment</p>
+//                 <p className="text-pos-text uppercase">
+//                   {viewing.paymentMethod}
+//                 </p>
+//               </div>
+//               <div>
+//                 <p className="text-pos-muted">Customer</p>
+//                 <p className="text-pos-text">
+//                   {viewing.customerName ?? "Walk-in"}
+//                 </p>
+//               </div>
+//               <div>
+//                 <p className="text-pos-muted">Staff</p>
+//                 <p className="text-pos-text">{viewing.staffName ?? "—"}</p>
+//               </div>
+//             </div>
+//             <div className="bg-pos-bg rounded-xl p-3 space-y-2">
+//               {viewing.items.map((item) => (
+//                 <div
+//                   key={item.productId}
+//                   className="flex justify-between text-xs sm:text-sm"
+//                 >
+//                   <span className="text-pos-muted">
+//                     {item.productName} × {item.qty}
+//                   </span>
+//                   <span className="text-pos-text">
+//                     {formatCurrency(item.total)}
+//                   </span>
+//                 </div>
+//               ))}
+//               <div className="border-t border-pos-border pt-2 space-y-1 text-xs sm:text-sm">
+//                 {viewing.discountAmount > 0 && (
+//                   <div className="flex justify-between text-red-400">
+//                     <span>Discount</span>
+//                     <span>-{formatCurrency(viewing.discountAmount)}</span>
+//                   </div>
+//                 )}
+//                 <div className="flex justify-between text-pos-muted">
+//                   <span>Tax</span>
+//                   <span>{formatCurrency(viewing.taxAmount)}</span>
+//                 </div>
+//                 <div className="flex justify-between font-bold text-pos-text">
+//                   <span>Total</span>
+//                   <span>{formatCurrency(viewing.total)}</span>
+//                 </div>
+//                 {viewing.paymentMethod === "cash" && (
+//                   <div className="flex justify-between text-emerald-400">
+//                     <span>Change</span>
+//                     <span>{formatCurrency(viewing.change)}</span>
+//                   </div>
+//                 )}
+//               </div>
+//             </div>
+//             {viewing.note && (
+//               <p className="text-xs text-pos-muted italic">
+//                 Note: {viewing.note}
+//               </p>
+//             )}
+//           </div>
+//         )}
+//       </Modal>
+//     </div>
+//   );
+// }
+
+import { useEffect, useState } from "react";
+import {
+  Search,
+  Eye,
+  RotateCcw,
+  FileSpreadsheet,
+  FileText,
+  ShieldAlert,
+} from "lucide-react";
+
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/db/database";
 import Header from "@/components/layout/Header";
@@ -296,16 +793,43 @@ import { syncRecord } from "@/lib/sync";
 import { formatCurrency, formatDate } from "@/utils/helpers";
 import type { Sale } from "@/types";
 
+/**
+ * SalesHistory Component
+ * Provides a responsive, full-featured sales transaction log with search filtering,
+ * date range querying, CSV/PDF export, receipt breakdown modal, and manager-only refund logic.
+ */
 export default function SalesHistory() {
+  // ---------------------------------------------------------------------------
+  // Context & Hooks
+  // ---------------------------------------------------------------------------
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
-  const { success } = useToast();
+  const { success, error } = useToast();
+
+  // Safe role extraction without breaking OutletSession or AuthContextType interfaces
+  const sessionData = outletSession as unknown as {
+    role?: string;
+    user?: { role?: string };
+  };
+  const isManager =
+    sessionData?.role === "manager" || sessionData?.user?.role === "manager";
+
+  // ---------------------------------------------------------------------------
+  // State Management
+  // ---------------------------------------------------------------------------
+  /** Complete sales transactions loaded for the current outlet */
   const [sales, setSales] = useState<Sale[]>([]);
+  /** Text search filter query for receipt number or customer name */
   const [search, setSearch] = useState("");
+  /** Active sale record selected for modal inspection and refund handling */
   const [viewing, setViewing] = useState<Sale | null>(null);
+  /** Date range filter boundaries (Format: YYYY-MM-DD) */
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  // ---------------------------------------------------------------------------
+  // Data Loading
+  // ---------------------------------------------------------------------------
   const load = async () => {
     const data = await db.sales
       .where("outletId")
@@ -319,6 +843,9 @@ export default function SalesHistory() {
     load();
   }, [outlet.id]);
 
+  // ---------------------------------------------------------------------------
+  // Data Filtering & Revenue Calculations
+  // ---------------------------------------------------------------------------
   const filtered = sales.filter((s) => {
     const q = search.toLowerCase();
     const matchQ =
@@ -334,8 +861,129 @@ export default function SalesHistory() {
     .filter((s) => s.status === "completed")
     .reduce((sum, s) => sum + s.total, 0);
 
+  // ---------------------------------------------------------------------------
+  // Document / Report Export Handlers
+  // ---------------------------------------------------------------------------
+  const handleExportCSV = () => {
+    if (filtered.length === 0) return;
+
+    const headers = [
+      "Receipt #",
+      "Date",
+      "Customer",
+      "Items Count",
+      "Payment Method",
+      "Total Amount",
+      "Status",
+    ];
+
+    const rows = filtered.map((s) => [
+      `"${s.receiptNumber}"`,
+      `"${formatDate(s.createdAt)}"`,
+      `"${s.customerName ?? "Walk-in"}"`,
+      s.items.length,
+      `"${s.paymentMethod.toUpperCase()}"`,
+      s.total,
+      `"${s.status}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `sales_history_${new Date().toISOString().slice(0, 10)}.csv`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    success("Sales report exported to CSV document.");
+  };
+
+  const handleExportPDF = () => {
+    if (filtered.length === 0) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Sales History Report</title>
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #1e293b; background: #fff; }
+            h1 { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
+            p.meta { color: #64748b; font-size: 12px; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; }
+            th { background-color: #f8fafc; font-weight: 600; color: #475569; text-transform: uppercase; font-size: 10px; }
+            .right { text-align: right; }
+            .mono { font-family: monospace; color: #2563eb; }
+            .badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+            .completed { background: #dcfce7; color: #166534; }
+            .refunded { background: #fef3c7; color: #92400e; }
+          </style>
+        </head>
+        <body>
+          <h1>Sales History Report</h1>
+          <p class="meta">Outlet: ${outlet.name || "Main Outlet"} | Generated: ${new Date().toLocaleString()} | Transactions: ${filtered.length} | Net Revenue: ${formatCurrency(totalRevenue)}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Receipt #</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Items</th>
+                <th>Payment</th>
+                <th class="right">Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered
+                .map(
+                  (s) => `
+                <tr>
+                  <td class="mono">${s.receiptNumber}</td>
+                  <td>${formatDate(s.createdAt)}</td>
+                  <td>${s.customerName ?? "Walk-in"}</td>
+                  <td>${s.items.length}</td>
+                  <td>${s.paymentMethod.toUpperCase()}</td>
+                  <td class="right">${formatCurrency(s.total)}</td>
+                  <td><span class="badge ${s.status}">${s.status}</span></td>
+                </tr>
+              `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() { window.print(); window.close(); };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  // ---------------------------------------------------------------------------
+  // Action Handlers
+  // ---------------------------------------------------------------------------
   const handleRefund = async (sale: Sale) => {
+    if (!isManager) {
+      error("Manager permission required to refund transactions.");
+      return;
+    }
+
     if (!confirm(`Refund sale ${sale.receiptNumber}?`)) return;
+
     await db.sales.update(sale.id, {
       status: "refunded",
       syncStatus: "pending",
@@ -343,7 +991,6 @@ export default function SalesHistory() {
     const updatedSale = await db.sales.get(sale.id);
     if (updatedSale) await syncRecord("sales", updatedSale);
 
-    // Restore stock
     for (const item of sale.items) {
       const prod = await db.products.get(item.productId);
       if (prod && prod.trackStock) {
@@ -360,121 +1007,151 @@ export default function SalesHistory() {
     load();
   };
 
+  // ---------------------------------------------------------------------------
+  // View Rendering
+  // ---------------------------------------------------------------------------
   return (
-    <div>
+    <div className="w-full min-h-screen">
       <Header
         title="Sales History"
         subtitle={`${filtered.length} transactions · ${formatCurrency(totalRevenue)} revenue`}
       />
-      <div className="p-6 space-y-4">
-        <div className="flex flex-wrap gap-3">
-          <Input
-            placeholder="Search receipt or customer..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            leftIcon={<Search size={15} />}
-            className="w-64"
-          />
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-40"
-          />
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-40"
-          />
+
+      <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center w-full md:w-auto">
+            <Input
+              placeholder="Search receipt or customer..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              leftIcon={<Search size={15} />}
+              className="w-full sm:w-64"
+            />
+            <div className="flex flex-row gap-2 w-full sm:w-auto">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-1/2 sm:w-40"
+              />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-1/2 sm:w-40"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <Button
+              variant="secondary"
+              icon={<FileSpreadsheet size={15} />}
+              onClick={handleExportCSV}
+              className="flex-1 sm:flex-none justify-center text-xs"
+            >
+              Export CSV
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<FileText size={15} />}
+              onClick={handleExportPDF}
+              className="flex-1 sm:flex-none justify-center text-xs"
+            >
+              Export PDF
+            </Button>
+          </div>
         </div>
 
-        <div className="bg-pos-card border border-pos-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-pos-border">
-                {[
-                  "Receipt #",
-                  "Date",
-                  "Customer",
-                  "Items",
-                  "Payment",
-                  "Total",
-                  "Status",
-                  "",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="text-left px-4 py-3 text-xs font-medium text-pos-muted uppercase tracking-wider"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-pos-border">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-12 text-center text-pos-muted"
-                  >
-                    No sales found.
-                  </td>
+        <div className="bg-pos-card border border-pos-border rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-sm min-w-175">
+              <thead>
+                <tr className="border-b border-pos-border bg-pos-bg/40">
+                  {[
+                    "Receipt #",
+                    "Date",
+                    "Customer",
+                    "Items",
+                    "Payment",
+                    "Total",
+                    "Status",
+                    "",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left px-4 py-3 text-xs font-medium text-pos-muted uppercase tracking-wider"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ) : (
-                filtered.map((sale) => (
-                  <tr
-                    key={sale.id}
-                    className="hover:bg-pos-hover transition-colors"
-                  >
-                    <td className="px-4 py-3 font-mono text-xs text-blue-400">
-                      {sale.receiptNumber}
-                    </td>
-                    <td className="px-4 py-3 text-pos-muted text-xs">
-                      {formatDate(sale.createdAt)}
-                    </td>
-                    <td className="px-4 py-3 text-pos-text">
-                      {sale.customerName ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-pos-muted">
-                      {sale.items.length}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="muted">
-                        {sale.paymentMethod.toUpperCase()}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-pos-text">
-                      {formatCurrency(sale.total)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant={
-                          sale.status === "completed"
-                            ? "success"
-                            : sale.status === "refunded"
-                              ? "warning"
-                              : "danger"
-                        }
-                        dot
-                      >
-                        {sale.status}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => setViewing(sale)}
-                        className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-                      >
-                        <Eye size={15} />
-                      </button>
+              </thead>
+              <tbody className="divide-y divide-pos-border">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-4 py-12 text-center text-pos-muted"
+                    >
+                      No sales found.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filtered.map((sale) => (
+                    <tr
+                      key={sale.id}
+                      className="hover:bg-pos-hover transition-colors"
+                    >
+                      <td className="px-4 py-3 font-mono text-xs text-blue-400 font-medium whitespace-nowrap">
+                        {sale.receiptNumber}
+                      </td>
+                      <td className="px-4 py-3 text-pos-muted text-xs whitespace-nowrap">
+                        {formatDate(sale.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 text-pos-text">
+                        {sale.customerName ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-pos-muted">
+                        {sale.items.length}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="muted">
+                          {sale.paymentMethod.toUpperCase()}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-pos-text whitespace-nowrap">
+                        {formatCurrency(sale.total)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant={
+                            sale.status === "completed"
+                              ? "success"
+                              : sale.status === "refunded"
+                                ? "warning"
+                                : "danger"
+                          }
+                          dot
+                        >
+                          {sale.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => setViewing(sale)}
+                          className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                          title="View Receipt Details"
+                        >
+                          <Eye size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -485,13 +1162,20 @@ export default function SalesHistory() {
         size="sm"
         footer={
           viewing?.status === "completed" ? (
-            <Button
-              variant="danger"
-              icon={<RotateCcw size={15} />}
-              onClick={() => viewing && handleRefund(viewing)}
-            >
-              Process Refund
-            </Button>
+            isManager ? (
+              <Button
+                variant="danger"
+                icon={<RotateCcw size={15} />}
+                onClick={() => viewing && handleRefund(viewing)}
+              >
+                Process Refund
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs text-amber-500 font-medium">
+                <ShieldAlert size={14} />
+                <span>Manager role required for refunds</span>
+              </div>
+            )
           ) : undefined
         }
       >
@@ -521,7 +1205,10 @@ export default function SalesHistory() {
             </div>
             <div className="bg-pos-bg rounded-xl p-3 space-y-2">
               {viewing.items.map((item) => (
-                <div key={item.productId} className="flex justify-between">
+                <div
+                  key={item.productId}
+                  className="flex justify-between text-xs sm:text-sm"
+                >
                   <span className="text-pos-muted">
                     {item.productName} × {item.qty}
                   </span>
@@ -530,7 +1217,7 @@ export default function SalesHistory() {
                   </span>
                 </div>
               ))}
-              <div className="border-t border-pos-border pt-2 space-y-1">
+              <div className="border-t border-pos-border pt-2 space-y-1 text-xs sm:text-sm">
                 {viewing.discountAmount > 0 && (
                   <div className="flex justify-between text-red-400">
                     <span>Discount</span>
