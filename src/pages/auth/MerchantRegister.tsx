@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ShoppingBag,
+  // ShoppingBag,
   Building2,
   User,
   Mail,
@@ -23,6 +23,7 @@ import {
   type BillingCycle,
 } from "@/types/index";
 import { formatCurrency } from "@/utils/helpers";
+import logo from "@/assest/logo1.svg";
 
 const tiers: { key: MerchantTier; features: string[] }[] = [
   {
@@ -112,10 +113,15 @@ export default function MerchantRegister() {
       <div className="w-full max-w-4xl">
         <div className="flex items-center justify-between gap-3 mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
+            {/* <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
               <ShoppingBag size={18} className="text-white" />
             </div>
-            <span className="font-bold text-pos-text">STOCKURA Pro</span>
+            <span className="font-bold text-pos-text">STOCKURA Pro</span> */}
+            <img
+              src={logo}
+              alt="STOCKURA Logo"
+              className="w-50 h-50 rounded-xl bg-none"
+            />
           </div>
           <button
             type="button"

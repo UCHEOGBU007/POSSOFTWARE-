@@ -845,13 +845,9 @@ const defaultForm: ProductForm = {
 export default function InventoryPage() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
+  const isManager = outletSession?.staff?.role === "manager";
+
   const { success, error: showError } = useToast();
-
-  // Check if current user is an outlet manager or admin
-  const userRole =
-    (outletSession as any)?.role || (outletSession as any)?.user?.role;
-  const isManager = userRole === "manager" || userRole === "admin";
-
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
@@ -904,7 +900,7 @@ export default function InventoryPage() {
 
   const openCreate = () => {
     if (!isManager) {
-      showError("Only outlet managers are allowed to add products.");
+      showError("Only managers can add products.");
       return;
     }
     setEditingProduct(null);
@@ -915,7 +911,7 @@ export default function InventoryPage() {
 
   const openEdit = (p: Product) => {
     if (!isManager) {
-      showError("Only outlet managers are allowed to edit products.");
+      showError("Only managers can edit products.");
       return;
     }
     setEditingProduct(p);
@@ -996,7 +992,7 @@ export default function InventoryPage() {
 
   const handleSave = async () => {
     if (!isManager) {
-      showError("Only outlet managers can save changes.");
+      showError("Only managers can add or edit products.");
       return;
     }
 
@@ -1070,11 +1066,6 @@ export default function InventoryPage() {
   };
 
   const handleStockAdj = async () => {
-    if (!isManager) {
-      showError("Only outlet managers can adjust stock.");
-      return;
-    }
-
     if (!showStockModal || !stockAdj.qty) return;
     const qty = parseInt(stockAdj.qty);
     if (isNaN(qty) || qty <= 0) {
@@ -1119,7 +1110,7 @@ export default function InventoryPage() {
 
   const deleteProduct = async (p: Product) => {
     if (!isManager) {
-      showError("Only outlet managers can delete products.");
+      showError("Only managers can delete products.");
       return;
     }
     if (!confirm(`Delete "${p.name}"?`)) return;
@@ -1129,10 +1120,6 @@ export default function InventoryPage() {
   };
 
   const addCategory = async () => {
-    if (!isManager) {
-      showError("Only outlet managers can add categories.");
-      return;
-    }
     if (!newCatName.trim()) return;
     const category = {
       id: generateId(),
@@ -1155,20 +1142,20 @@ export default function InventoryPage() {
         title="Inventory"
         subtitle={`${products.length} products`}
         actions={
-          isManager ? (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCatModal(true)}
-              >
-                Categories
-              </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCatModal(true)}
+            >
+              Categories
+            </Button>
+            {isManager && (
               <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
                 Add Product
               </Button>
-            </div>
-          ) : undefined
+            )}
+          </div>
         }
       />
       <div className="p-6 space-y-4">
@@ -1219,10 +1206,10 @@ export default function InventoryPage() {
                     "Cost",
                     "Stock",
                     "Status",
-                    isManager ? "Actions" : "",
-                  ].map((h, i) => (
+                    "",
+                  ].map((h) => (
                     <th
-                      key={i}
+                      key={h}
                       className="text-left px-4 py-3 text-xs font-medium text-pos-muted uppercase tracking-wider"
                     >
                       {h}
@@ -1306,31 +1293,33 @@ export default function InventoryPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        {isManager && (
-                          <div className="flex gap-1 justify-end">
-                            <button
-                              onClick={() => setShowStockModal(p)}
-                              className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-                              title="Adjust stock"
-                            >
-                              <ArrowUpCircle size={15} />
-                            </button>
-                            <button
-                              onClick={() => openEdit(p)}
-                              className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
-                              title="Edit product"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                            <button
-                              onClick={() => deleteProduct(p)}
-                              className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              title="Delete product"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex gap-1 justify-end">
+                          <button
+                            onClick={() => setShowStockModal(p)}
+                            className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                            title="Adjust stock"
+                          >
+                            <ArrowUpCircle size={15} />
+                          </button>
+                          {isManager && (
+                            <>
+                              <button
+                                onClick={() => openEdit(p)}
+                                className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+                                title="Edit product"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                onClick={() => deleteProduct(p)}
+                                className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                title="Delete product"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1341,7 +1330,6 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {/* Product Form Modal */}
       <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
@@ -1520,7 +1508,6 @@ export default function InventoryPage() {
         </div>
       </Modal>
 
-      {/* Stock Adjustment Modal */}
       <Modal
         open={!!showStockModal}
         onClose={() => setShowStockModal(null)}
@@ -1571,7 +1558,6 @@ export default function InventoryPage() {
         </div>
       </Modal>
 
-      {/* Manage Categories Modal */}
       <Modal
         open={showCatModal}
         onClose={() => setShowCatModal(false)}
@@ -1595,17 +1581,15 @@ export default function InventoryPage() {
                 className="flex items-center justify-between px-3 py-2 bg-pos-bg rounded-lg"
               >
                 <span className="text-sm text-pos-text">{c.name}</span>
-                {isManager && (
-                  <button
-                    onClick={async () => {
-                      await db.categories.delete(c.id);
-                      load();
-                    }}
-                    className="text-pos-muted hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <button
+                  onClick={async () => {
+                    await db.categories.delete(c.id);
+                    load();
+                  }}
+                  className="text-pos-muted hover:text-red-400 transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))}
           </div>
