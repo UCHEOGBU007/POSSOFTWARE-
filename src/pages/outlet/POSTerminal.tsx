@@ -35,7 +35,6 @@
 //   { key: "cash", label: "Cash", icon: <Banknote size={18} /> },
 //   { key: "card", label: "Card", icon: <CreditCard size={18} /> },
 //   { key: "transfer", label: "Transfer", icon: <Building2 size={18} /> },
-//   { key: "pos", label: "POS", icon: <Smartphone size={18} /> },
 // ];
 
 // export default function POSTerminal() {
@@ -784,6 +783,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { usePOS } from "@/contexts/POSContext";
 import { db } from "@/db/database";
+import { getSupabaseConfigStatus, supabase } from "@/lib/supabase";
 import Button from "@/components/ui/Button.tsx";
 import Modal from "@/components/ui/Modal.tsx";
 import Badge from "@/components/ui/Badge.tsx";
@@ -844,6 +844,7 @@ function generateEscPosBuffer(sale: any, outlet: any): Uint8Array {
   addStr(`${outlet.name}\n`);
   addBytes(NORMAL_SIZE);
   addBytes(BOLD_OFF);
+  addStr(`${outlet.address}\n`);
   addStr("Sale Receipt\n");
   addStr(`${sale.receiptNumber}\n`);
   addStr("--------------------------------\n");
@@ -853,22 +854,26 @@ function generateEscPosBuffer(sale: any, outlet: any): Uint8Array {
   sale.items.forEach((item: any) => {
     addStr(`${item.productName} x${item.qty}\n`);
     addBytes(ALIGN_RIGHT);
-    addStr(`${formatCurrency(item.total)}\n`);
+    addStr(`${formatCurrency(item.total, outlet.currency ?? "NGN")}\n`);
     addBytes(ALIGN_LEFT);
   });
   addStr("--------------------------------\n");
 
   // 4. Financial Totals
   if (sale.discountAmount > 0) {
-    addStr(`Discount: -${formatCurrency(sale.discountAmount)}\n`);
+    addStr(
+      `Discount: -${formatCurrency(sale.discountAmount, outlet.currency ?? "NGN")}\n`,
+    );
   }
-  addStr(`Tax: ${formatCurrency(sale.taxAmount)}\n`);
+  addStr(`Tax: ${formatCurrency(sale.taxAmount, outlet.currency ?? "NGN")}\n`);
   addBytes(BOLD_ON);
-  addStr(`TOTAL: ${formatCurrency(sale.total)}\n`);
+  addStr(`TOTAL: ${formatCurrency(sale.total, outlet.currency ?? "NGN")}\n`);
   addBytes(BOLD_OFF);
 
   if (sale.paymentMethod === "cash" && sale.change > 0) {
-    addStr(`Change: ${formatCurrency(sale.change)}\n`);
+    addStr(
+      `Change: ${formatCurrency(sale.change, outlet.currency ?? "NGN")}\n`,
+    );
   }
 
   // 5. Receipt Footer & Paper Cut Command
@@ -894,15 +899,16 @@ const paymentMethods: {
   icon: React.ReactNode;
 }[] = [
   { key: "cash", label: "Cash", icon: <Banknote size={18} /> },
-  { key: "card", label: "Card", icon: <CreditCard size={18} /> },
   { key: "transfer", label: "Transfer", icon: <Building2 size={18} /> },
-  { key: "pos", label: "POS", icon: <Smartphone size={18} /> },
+  { key: "card", label: "Card", icon: <CreditCard size={18} /> },
+  { key: "qris", label: "QRIS", icon: <Smartphone size={18} /> },
 ];
 
 export default function POSTerminal() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
   const staff = outletSession!.staff;
+  const outletCurrency = outlet.currency ?? "NGN";
   const { success, error: showError } = useToast();
   const pos = usePOS();
 
@@ -936,12 +942,54 @@ export default function POSTerminal() {
 
   useEffect(() => {
     const load = async () => {
-      const [prods, cats, custs] = await Promise.all([
-        db.products
+      const { isConfigured } = getSupabaseConfigStatus();
+      let prods: Product[];
+      if (isConfigured) {
+        const { data, error } = await supabase
+          .from("products")
+          .select("*")
+          .eq("outlet_id", outlet.id)
+          .eq("is_active", true);
+        if (error) throw error;
+        prods = (data ?? []).map((row: any) => ({
+          id: row.id,
+          outletId: row.outlet_id,
+          categoryId: row.category_id ?? undefined,
+          name: row.name,
+          sku: row.sku,
+          barcode: row.barcode ?? undefined,
+          description: row.description ?? undefined,
+          price: Number(row.price),
+          costPrice: Number(row.cost_price),
+          stock: Number(row.stock),
+          lowStockAlert: Number(row.low_stock_alert),
+          unit: row.unit,
+          image: row.image ?? undefined,
+          isActive: row.is_active,
+          trackStock: row.track_stock,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          syncStatus: "synced" as const,
+        }));
+        const cloudProductIds = new Set(prods.map((product) => product.id));
+        const cachedProducts = await db.products
+          .where("outletId")
+          .equals(outlet.id)
+          .toArray();
+        await db.products.bulkDelete(
+          cachedProducts
+            .filter((product) => !cloudProductIds.has(product.id))
+            .map((product) => product.id),
+        );
+        await db.products.bulkPut(prods);
+      } else {
+        prods = await db.products
           .where("outletId")
           .equals(outlet.id)
           .filter((p) => p.isActive)
-          .toArray(),
+          .toArray();
+      }
+      const [cats, custs] = await Promise.all([
         db.categories.where("outletId").equals(outlet.id).toArray(),
         db.customers.where("outletId").equals(outlet.id).toArray(),
       ]);
@@ -950,11 +998,13 @@ export default function POSTerminal() {
       setCustomers(custs);
     };
     load();
+    const refreshTimer = window.setInterval(load, 30_000);
+    return () => window.clearInterval(refreshTimer);
   }, [outlet.id]);
 
   useEffect(() => {
-    pos.setTaxRate(outlet.taxEnabled ? 7.5 : 0);
-  }, [outlet.taxEnabled]);
+    pos.setTaxRate(outlet.taxEnabled ? (outlet.taxRate ?? 7.5) : 0);
+  }, [outlet.taxEnabled, outlet.taxRate]);
 
   const filtered = products.filter((p) => {
     const q = search.toLowerCase();
@@ -1319,7 +1369,7 @@ export default function POSTerminal() {
 
                     <div>
                       <p className="text-sm font-bold text-blue-400">
-                        {formatCurrency(p.price)}
+                        {formatCurrency(p.price, outletCurrency)}
                       </p>
                       {p.trackStock && (
                         <p
@@ -1439,7 +1489,8 @@ export default function POSTerminal() {
                     {item.productName}
                   </p>
                   <p className="text-xs text-pos-muted">
-                    {formatCurrency(item.unitPrice)} × {item.qty}
+                    {formatCurrency(item.unitPrice, outletCurrency)} ×{" "}
+                    {item.qty}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -1466,7 +1517,7 @@ export default function POSTerminal() {
                   </button>
                 </div>
                 <p className="text-sm font-semibold text-pos-text min-w-18 text-right shrink-0">
-                  {formatCurrency(item.total)}
+                  {formatCurrency(item.total, outletCurrency)}
                 </p>
               </div>
             ))
@@ -1493,24 +1544,26 @@ export default function POSTerminal() {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between text-pos-muted">
                 <span>Subtotal</span>
-                <span>{formatCurrency(pos.cartSubtotal)}</span>
+                <span>{formatCurrency(pos.cartSubtotal, outletCurrency)}</span>
               </div>
               {pos.cartDiscount > 0 && (
                 <div className="flex justify-between text-red-400">
                   <span>Discount</span>
-                  <span>-{formatCurrency(pos.cartDiscount)}</span>
+                  <span>
+                    -{formatCurrency(pos.cartDiscount, outletCurrency)}
+                  </span>
                 </div>
               )}
               {outlet.taxEnabled && (
                 <div className="flex justify-between text-pos-muted">
                   <span>VAT ({pos.taxRate}%)</span>
-                  <span>{formatCurrency(pos.cartTax)}</span>
+                  <span>{formatCurrency(pos.cartTax, outletCurrency)}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-base text-pos-text pt-1 border-t border-pos-border">
                 <span>Total</span>
                 <span className="text-blue-400">
-                  {formatCurrency(pos.cartTotal)}
+                  {formatCurrency(pos.cartTotal, outletCurrency)}
                 </span>
               </div>
             </div>
@@ -1520,7 +1573,7 @@ export default function POSTerminal() {
               icon={<CreditCard size={18} />}
               onClick={() => setShowPayModal(true)}
             >
-              Charge {formatCurrency(pos.cartTotal)}
+              Charge {formatCurrency(pos.cartTotal, outletCurrency)}
             </Button>
           </div>
         )}
@@ -1544,7 +1597,7 @@ export default function POSTerminal() {
                 View Cart <ChevronUp size={12} />
               </p>
               <p className="text-sm font-bold text-blue-400">
-                {formatCurrency(pos.cartTotal)}
+                {formatCurrency(pos.cartTotal, outletCurrency)}
               </p>
             </div>
           </button>
@@ -1591,7 +1644,7 @@ export default function POSTerminal() {
               Amount Due
             </p>
             <p className="text-3xl font-bold text-blue-400">
-              {formatCurrency(pos.cartTotal)}
+              {formatCurrency(pos.cartTotal, outletCurrency)}
             </p>
           </div>
           <div>
@@ -1632,7 +1685,10 @@ export default function POSTerminal() {
                 <div className="flex items-center justify-between text-sm p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
                   <span className="text-pos-muted">Change</span>
                   <span className="font-bold text-emerald-400">
-                    {formatCurrency(parseFloat(amountPaid) - pos.cartTotal)}
+                    {formatCurrency(
+                      parseFloat(amountPaid) - pos.cartTotal,
+                      outletCurrency,
+                    )}
                   </span>
                 </div>
               )}
@@ -1722,10 +1778,18 @@ export default function POSTerminal() {
         {pos.lastSale && (
           <div className="space-y-4" id="receipt-content">
             <div className="text-center">
+              {outlet.logo && (
+                <img
+                  src={outlet.logo}
+                  alt={`${outlet.name} logo`}
+                  className="mx-auto mb-2 h-14 max-w-36 object-contain"
+                />
+              )}
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
                 <ShoppingCart size={22} className="text-emerald-400" />
               </div>
               <p className="font-bold text-pos-text text-lg">{outlet.name}</p>
+              <p className="text-xs text-pos-muted">{outlet.address}</p>
               <p className="text-sm text-pos-muted">Sale Receipt</p>
               <p className="text-xs text-pos-muted font-mono mt-1">
                 {pos.lastSale.receiptNumber}
@@ -1738,7 +1802,7 @@ export default function POSTerminal() {
                     {item.productName} × {item.qty}
                   </span>
                   <span className="text-pos-text">
-                    {formatCurrency(item.total)}
+                    {formatCurrency(item.total, outletCurrency)}
                   </span>
                 </div>
               ))}
@@ -1746,24 +1810,34 @@ export default function POSTerminal() {
                 {pos.lastSale.discountAmount > 0 && (
                   <div className="flex justify-between text-red-400">
                     <span>Discount</span>
-                    <span>-{formatCurrency(pos.lastSale.discountAmount)}</span>
+                    <span>
+                      -
+                      {formatCurrency(
+                        pos.lastSale.discountAmount,
+                        outletCurrency,
+                      )}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between text-pos-muted">
                   <span>Tax</span>
-                  <span>{formatCurrency(pos.lastSale.taxAmount)}</span>
+                  <span>
+                    {formatCurrency(pos.lastSale.taxAmount, outletCurrency)}
+                  </span>
                 </div>
                 <div className="flex justify-between font-bold text-pos-text text-base">
                   <span>Total</span>
                   <span className="text-blue-400">
-                    {formatCurrency(pos.lastSale.total)}
+                    {formatCurrency(pos.lastSale.total, outletCurrency)}
                   </span>
                 </div>
                 {pos.lastSale.paymentMethod === "cash" &&
                   pos.lastSale.change > 0 && (
                     <div className="flex justify-between text-emerald-400 font-medium">
                       <span>Change</span>
-                      <span>{formatCurrency(pos.lastSale.change)}</span>
+                      <span>
+                        {formatCurrency(pos.lastSale.change, outletCurrency)}
+                      </span>
                     </div>
                   )}
               </div>

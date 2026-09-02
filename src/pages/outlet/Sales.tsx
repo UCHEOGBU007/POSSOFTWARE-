@@ -499,7 +499,7 @@ import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { syncRecord } from "@/lib/sync";
+import { recordAuditLog, syncRecord } from "@/lib/sync";
 import { formatCurrency, formatDate } from "@/utils/helpers";
 import type { Sale } from "@/types";
 
@@ -515,6 +515,7 @@ export default function SalesHistory() {
   // ---------------------------------------------------------------------------
   const { outletSession } = useAuth();
   const outlet = outletSession?.outlet;
+  const outletCurrency = outlet?.currency ?? "NGN";
   const { success, error } = useToast();
 
   // ---------------------------------------------------------------------------
@@ -682,7 +683,7 @@ export default function SalesHistory() {
         </head>
         <body>
           <h1>Sales History Report (${isManager ? "Manager View - 30 Days" : "Cashier View - 24 Hours"})</h1>
-          <p class="meta">Outlet: ${outlet?.name || "Main Outlet"} | Generated: ${new Date().toLocaleString()} | Transactions: ${filtered.length} | Net Revenue: ${formatCurrency(totalRevenue)}</p>
+          <p class="meta">Outlet: ${outlet?.name || "Main Outlet"} | Generated: ${new Date().toLocaleString()} | Transactions: ${filtered.length} | Net Revenue: ${formatCurrency(totalRevenue, outletCurrency)}</p>
           <table>
             <thead>
               <tr>
@@ -705,7 +706,7 @@ export default function SalesHistory() {
                   <td>${s.customerName ?? "Walk-in"}</td>
                   <td>${s.items.length}</td>
                   <td>${s.paymentMethod.toUpperCase()}</td>
-                  <td class="right">${formatCurrency(s.total)}</td>
+                  <td class="right">${formatCurrency(s.total, outletCurrency)}</td>
                   <td><span class="badge ${s.status}">${s.status}</span></td>
                 </tr>
               `,
@@ -756,6 +757,20 @@ export default function SalesHistory() {
       const updatedSale = await db.sales.get(sale.id);
       if (updatedSale) await syncRecord("sales", updatedSale);
 
+      await recordAuditLog({
+        id: crypto.randomUUID(),
+        outletId: outlet.id,
+        action: "sale_refunded",
+        actorId: outletSession?.staff?.id,
+        actorName: outletSession?.staff?.name ?? "Unknown",
+        actorRole: outletSession?.staff?.role,
+        saleId: sale.id,
+        receiptNumber: sale.receiptNumber,
+        details: `Refunded ${formatCurrency(sale.total, outletCurrency)}`,
+        createdAt: new Date().toISOString(),
+        syncStatus: "pending",
+      });
+
       // Restore Inventory Stock
       for (const item of sale.items) {
         const prod = await db.products.get(item.productId);
@@ -784,7 +799,7 @@ export default function SalesHistory() {
     <div className="w-full min-h-screen">
       <Header
         title="Sales History"
-        subtitle={`${filtered.length} transactions · ${formatCurrency(totalRevenue)} revenue`}
+        subtitle={`${filtered.length} transactions · ${formatCurrency(totalRevenue, outletCurrency)} revenue`}
       />
 
       <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
@@ -911,7 +926,7 @@ export default function SalesHistory() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 font-semibold text-pos-text whitespace-nowrap">
-                        {formatCurrency(sale.total)}
+                        {formatCurrency(sale.total, outletCurrency)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge
@@ -1005,7 +1020,7 @@ export default function SalesHistory() {
                     {item.productName} × {item.qty}
                   </span>
                   <span className="text-pos-text">
-                    {formatCurrency(item.total)}
+                    {formatCurrency(item.total, outletCurrency)}
                   </span>
                 </div>
               ))}
@@ -1014,21 +1029,27 @@ export default function SalesHistory() {
                 {viewing.discountAmount > 0 && (
                   <div className="flex justify-between text-red-400">
                     <span>Discount</span>
-                    <span>-{formatCurrency(viewing.discountAmount)}</span>
+                    <span>
+                      -{formatCurrency(viewing.discountAmount, outletCurrency)}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between text-pos-muted">
                   <span>Tax</span>
-                  <span>{formatCurrency(viewing.taxAmount)}</span>
+                  <span>
+                    {formatCurrency(viewing.taxAmount, outletCurrency)}
+                  </span>
                 </div>
                 <div className="flex justify-between font-bold text-pos-text">
                   <span>Total</span>
-                  <span>{formatCurrency(viewing.total)}</span>
+                  <span>{formatCurrency(viewing.total, outletCurrency)}</span>
                 </div>
                 {viewing.paymentMethod === "cash" && (
                   <div className="flex justify-between text-emerald-400">
                     <span>Change</span>
-                    <span>{formatCurrency(viewing.change)}</span>
+                    <span>
+                      {formatCurrency(viewing.change, outletCurrency)}
+                    </span>
                   </div>
                 )}
               </div>

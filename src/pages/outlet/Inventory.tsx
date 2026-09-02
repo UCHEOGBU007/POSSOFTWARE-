@@ -827,7 +827,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/db/database";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseConfigStatus, supabase } from "@/lib/supabase";
 import Header from "@/components/layout/Header";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -835,7 +835,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import Select from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
-import { syncRecord } from "@/lib/sync";
+import { recordAuditLog, syncRecord } from "@/lib/sync";
 import { generateId, formatCurrency } from "@/utils/helpers";
 import type { Product, Category, StockMovement } from "@/types";
 
@@ -874,6 +874,7 @@ const defaultForm: ProductForm = {
 export default function InventoryPage() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
+  const outletCurrency = outlet.currency ?? "NGN";
   const isManager = outletSession?.staff?.role === "manager";
 
   const { success, error: showError } = useToast();
@@ -1071,6 +1072,19 @@ export default function InventoryPage() {
         await db.products.update(editingProduct.id, data);
         const updatedProduct = await db.products.get(editingProduct.id);
         if (updatedProduct) await syncRecord("products", updatedProduct);
+        await recordAuditLog({
+          id: generateId(),
+          outletId: outlet.id,
+          action: "product_edited",
+          actorId: outletSession?.staff?.id,
+          actorName: outletSession?.staff?.name ?? "Unknown",
+          actorRole: outletSession?.staff?.role,
+          productId: editingProduct.id,
+          productName: data.name,
+          details: `SKU ${data.sku}`,
+          createdAt: now,
+          syncStatus: "pending",
+        });
         success("Product updated.");
       } else {
         const product = {
@@ -1081,6 +1095,19 @@ export default function InventoryPage() {
         };
         await db.products.add(product);
         await syncRecord("products", product);
+        await recordAuditLog({
+          id: generateId(),
+          outletId: outlet.id,
+          action: "product_added",
+          actorId: outletSession?.staff?.id,
+          actorName: outletSession?.staff?.name ?? "Unknown",
+          actorRole: outletSession?.staff?.role,
+          productId: product.id,
+          productName: product.name,
+          details: `SKU ${product.sku}`,
+          createdAt: now,
+          syncStatus: "pending",
+        });
         success("Product added.");
       }
 
@@ -1147,9 +1174,34 @@ export default function InventoryPage() {
       return;
     }
     if (!confirm(`Delete "${p.name}"?`)) return;
-    await db.products.delete(p.id);
-    success("Product deleted.");
-    load();
+    try {
+      const { isConfigured } = getSupabaseConfigStatus();
+      if (isConfigured) {
+        const result = await syncRecord("products", p.id, "delete");
+        if (!result.ok) {
+          throw new Error("The product could not be deleted from Supabase.");
+        }
+      }
+
+      await db.products.delete(p.id);
+      await recordAuditLog({
+        id: generateId(),
+        outletId: outlet.id,
+        action: "product_deleted",
+        actorId: outletSession?.staff?.id,
+        actorName: outletSession?.staff?.name ?? "Unknown",
+        actorRole: outletSession?.staff?.role,
+        productId: p.id,
+        productName: p.name,
+        details: `SKU ${p.sku}`,
+        createdAt: new Date().toISOString(),
+        syncStatus: "pending",
+      });
+      success("Product deleted from the outlet and Supabase.");
+      await load();
+    } catch (err: any) {
+      showError(err.message ?? "Product deletion failed. No data was removed.");
+    }
   };
 
   const addCategory = async () => {
@@ -1311,10 +1363,10 @@ export default function InventoryPage() {
                         {cat?.name ?? "—"}
                       </td>
                       <td className="px-4 py-3 font-semibold text-pos-text">
-                        {formatCurrency(p.price)}
+                        {formatCurrency(p.price, outletCurrency)}
                       </td>
                       <td className="px-4 py-3 text-pos-muted">
-                        {formatCurrency(p.costPrice)}
+                        {formatCurrency(p.costPrice, outletCurrency)}
                       </td>
                       <td className="px-4 py-3">
                         <span

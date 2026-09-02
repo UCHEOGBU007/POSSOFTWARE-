@@ -60,6 +60,7 @@ import type {
   Staff,
   Expense,
   StockMovement,
+  AuditLog,
 } from "../types";
 
 export class POSDatabase extends Dexie {
@@ -72,6 +73,7 @@ export class POSDatabase extends Dexie {
   staff!: Table<Staff>;
   expenses!: Table<Expense>;
   stockMovements!: Table<StockMovement>;
+  auditLogs!: Table<AuditLog>;
 
   constructor() {
     super("STOCKURA Pro");
@@ -93,6 +95,37 @@ export class POSDatabase extends Dexie {
     this.version(2).stores({
       staff: "id, outletId, email, pin, isActive, syncStatus",
     });
+
+    this.version(3).stores({
+      auditLogs: "id, outletId, action, createdAt, syncStatus",
+    });
+
+    // Version 4 removes the legacy credential index and clears any remnants
+    // that may have been written by earlier versions of the app.
+    this.version(4)
+      .stores({
+        staff: "id, outletId, email, isActive, syncStatus",
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table("staff")
+          .toCollection()
+          .modify((staff: Record<string, unknown>) => {
+            delete staff.pin;
+          });
+        await transaction
+          .table("merchants")
+          .toCollection()
+          .modify((merchant: Record<string, unknown>) => {
+            delete merchant.passwordHash;
+          });
+        await transaction
+          .table("outlets")
+          .toCollection()
+          .modify((outlet: Record<string, unknown>) => {
+            delete outlet.pin;
+          });
+      });
   }
 
   async deleteSyncedData(outletId: string) {
@@ -101,6 +134,39 @@ export class POSDatabase extends Dexie {
       this.stockMovements.where({ outletId, syncStatus: "synced" }).delete(),
       this.expenses.where({ outletId, syncStatus: "synced" }).delete(),
     ]);
+  }
+
+  /** Remove all offline business data when a user explicitly signs out. */
+  async clearCachedData() {
+    await this.transaction(
+      "rw",
+      [
+        this.merchants,
+        this.outlets,
+        this.categories,
+        this.products,
+        this.sales,
+        this.customers,
+        this.staff,
+        this.expenses,
+        this.stockMovements,
+        this.auditLogs,
+      ],
+      async () => {
+        await Promise.all([
+          this.merchants.clear(),
+          this.outlets.clear(),
+          this.categories.clear(),
+          this.products.clear(),
+          this.sales.clear(),
+          this.customers.clear(),
+          this.staff.clear(),
+          this.expenses.clear(),
+          this.stockMovements.clear(),
+          this.auditLogs.clear(),
+        ]);
+      },
+    );
   }
 }
 

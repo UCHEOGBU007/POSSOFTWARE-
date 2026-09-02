@@ -400,6 +400,7 @@ export default function OutletReports() {
   // Retrieve authenticated outlet session and user details
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
+  const outletCurrency = outlet.currency ?? "NGN";
 
   // Determine user role and whether cashier masking should apply
   const role = outletSession?.staff?.role ?? "cashier"; // Default to "cashier" if role is undefined
@@ -482,25 +483,35 @@ export default function OutletReports() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
           <StatCard
             label="Today's Revenue"
-            value={isCashier ? "******" : formatCurrency(todayRevenue)}
+            value={
+              isCashier
+                ? "******"
+                : formatCurrency(todayRevenue, outletCurrency)
+            }
             icon={<TrendingUp size={20} />}
             iconColor="text-emerald-400"
           />
           <StatCard
             label="Monthly Revenue"
-            value={isCashier ? "******" : formatCurrency(monthRevenue)}
+            value={
+              isCashier
+                ? "******"
+                : formatCurrency(monthRevenue, outletCurrency)
+            }
             icon={<BarChart2 size={20} />}
             iconColor="text-blue-400"
           />
           <StatCard
             label="Monthly Expenses"
-            value={formatCurrency(totalExpenses)}
+            value={formatCurrency(totalExpenses, outletCurrency)}
             icon={<TrendingDown size={20} />}
             iconColor="text-red-400"
           />
           <StatCard
             label="Net Profit"
-            value={isCashier ? "******" : formatCurrency(netProfit)}
+            value={
+              isCashier ? "******" : formatCurrency(netProfit, outletCurrency)
+            }
             icon={<TrendingUp size={20} />}
             iconColor={netProfit >= 0 ? "text-emerald-400" : "text-red-400"}
           />
@@ -539,7 +550,7 @@ export default function OutletReports() {
                       </p>
                     </div>
                     <p className="text-sm font-semibold text-pos-text shrink-0">
-                      {formatCurrency(p.revenue)}
+                      {formatCurrency(p.revenue, outletCurrency)}
                     </p>
                   </div>
                 ))}
@@ -569,7 +580,7 @@ export default function OutletReports() {
                           {method}
                         </p>
                         <p className="text-sm font-semibold text-pos-text shrink-0">
-                          {formatCurrency(amount)}
+                          {formatCurrency(amount, outletCurrency)}
                         </p>
                       </div>
                       {/* Visual progress bar reflecting percentage */}

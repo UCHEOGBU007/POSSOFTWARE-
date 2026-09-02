@@ -437,6 +437,7 @@ const defaultForm: CustomerForm = {
 export default function CustomersPage() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
+  const outletCurrency = outlet.currency ?? "NGN";
   const { success, error: showError } = useToast();
 
   // Check if staff has manager role
@@ -652,7 +653,7 @@ export default function CustomersPage() {
                         Spent
                       </span>
                       <span className="font-semibold text-pos-text">
-                        {formatCurrency(c.totalSpent)}
+                        {formatCurrency(c.totalSpent, outletCurrency)}
                       </span>
                     </div>
                     <div>
@@ -732,7 +733,7 @@ export default function CustomersPage() {
                           {c.phone}
                         </td>
                         <td className="px-4 py-3 font-semibold text-pos-text whitespace-nowrap">
-                          {formatCurrency(c.totalSpent)}
+                          {formatCurrency(c.totalSpent, outletCurrency)}
                         </td>
                         <td className="px-4 py-3 text-pos-muted whitespace-nowrap">
                           {c.visitCount}

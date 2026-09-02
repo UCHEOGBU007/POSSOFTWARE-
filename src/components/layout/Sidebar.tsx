@@ -13,6 +13,7 @@ import {
   TrendingUp,
   UserCheck,
   Boxes,
+  ClipboardList,
 } from "lucide-react";
 import { clsx } from "@/utils/helpers";
 import type { ReactNode } from "react";
@@ -48,6 +49,11 @@ const merchantNav: NavItem[] = [
     label: "Billing & Tier",
   },
   { to: "/merchant/reports", icon: <BarChart2 size={18} />, label: "Reports" },
+  {
+    to: "/merchant/activity",
+    icon: <ClipboardList size={18} />,
+    label: "Activity Log",
+  },
   { to: "/merchant/settings", icon: <Settings size={18} />, label: "Settings" },
 ];
 

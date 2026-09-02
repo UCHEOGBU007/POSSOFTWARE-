@@ -54,6 +54,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 const MERCHANT_SESSION_KEY = "pos_merchant_session";
 const OUTLET_SESSION_KEY = "pos_outlet_session";
+const MERCHANT_SELECT_COLUMNS =
+  "id, business_name, owner_name, email, phone, tier, subscription_status, subscription_expiry, address, logo, currency, tax_rate, created_at, updated_at";
+const STAFF_SELECT_COLUMNS =
+  "id, outlet_id, name, email, phone, role, is_active, created_at, updated_at";
 
 const { isConfigured } = getSupabaseConfigStatus();
 
@@ -69,9 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const restoreSessions = async () => {
       try {
         // 1. Try restoring Outlet Session (Terminal Cashier Login) from storage
-        const oRaw =
-          sessionStorage.getItem(OUTLET_SESSION_KEY) ||
-          localStorage.getItem(OUTLET_SESSION_KEY);
+        const oRaw = sessionStorage.getItem(OUTLET_SESSION_KEY);
 
         // A browser storage value is not an authentication credential. Never
         // restore an outlet session from it while Supabase is configured.
@@ -101,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const uid = session.user.id;
             const { data: cloudStaff } = await supabase
               .from("staff")
-              .select("*")
+              .select(STAFF_SELECT_COLUMNS)
               .eq("id", uid)
               .eq("is_active", true)
               .maybeSingle();
@@ -130,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (!merchant) {
               const { data: cloudMerchant } = await supabase
                 .from("merchants")
-                .select("*")
+                .select(MERCHANT_SELECT_COLUMNS)
                 .eq("id", uid)
                 .maybeSingle();
               if (cloudMerchant) {
@@ -207,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isConfigured) {
       const { data: cloudMerchant } = await supabase
         .from("merchants")
-        .select("*")
+        .select(MERCHANT_SELECT_COLUMNS)
         .eq("id", authData.user.id)
         .maybeSingle();
 
@@ -236,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setMerchantSession(null);
     sessionStorage.removeItem(MERCHANT_SESSION_KEY);
+    await db.clearCachedData();
   };
 
   const registerMerchant = async (data: RegisterMerchantData) => {
@@ -319,6 +322,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     await db.merchants.put(updated);
     await syncRecord("merchants", updated);
+    if (typeof data.taxRate === "number" || typeof data.currency === "string") {
+      const outlets = await db.outlets
+        .where("merchantId")
+        .equals(updated.id)
+        .toArray();
+      if (isConfigured) {
+        const outletUpdates: Record<string, string | number> = {};
+        if (typeof data.taxRate === "number")
+          outletUpdates.tax_rate = data.taxRate;
+        if (typeof data.currency === "string")
+          outletUpdates.currency = data.currency;
+        const { error } = await supabase
+          .from("outlets")
+          .update(outletUpdates)
+          .eq("merchant_id", updated.id);
+        if (error) throw error;
+      }
+      await Promise.all(
+        outlets.map((outlet) =>
+          db.outlets.update(outlet.id, {
+            ...(typeof data.taxRate === "number"
+              ? { taxRate: data.taxRate }
+              : {}),
+            ...(typeof data.currency === "string"
+              ? { currency: data.currency }
+              : {}),
+            updatedAt: updated.updatedAt,
+            syncStatus: "synced",
+          }),
+        ),
+      );
+    }
     setMerchantSession({ merchant: updated });
     sessionStorage.setItem(
       MERCHANT_SESSION_KEY,
@@ -419,7 +454,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (authUserId) {
         const { data } = await supabase
           .from("staff")
-          .select("*")
+          .select(STAFF_SELECT_COLUMNS)
           .eq("id", authUserId)
           .maybeSingle();
         cloudStaff = data;
@@ -427,7 +462,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!cloudStaff) {
         const { data } = await supabase
           .from("staff")
-          .select("*")
+          .select(STAFF_SELECT_COLUMNS)
           .eq("email", normalizedEmail)
           .maybeSingle();
         cloudStaff = data;
@@ -470,8 +505,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: cloudOutlet.name,
           address: cloudOutlet.address,
           phone: cloudOutlet.phone ?? "",
+          logo: cloudOutlet.logo ?? undefined,
           pin: "",
           currency: cloudOutlet.currency || undefined,
+          taxRate: Number(cloudOutlet.tax_rate ?? 7.5),
           isActive: cloudOutlet.is_active ?? cloudOutlet.isActive ?? true,
           taxEnabled: cloudOutlet.tax_enabled ?? cloudOutlet.taxEnabled ?? true,
           receiptFooter:
@@ -490,9 +527,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     await hydrateOutletData(outlet.id);
 
+    if (isConfigured) {
+      const { data: cloudOutlet } = await supabase
+        .from("outlets")
+        .select("currency, tax_rate, logo")
+        .eq("id", outlet.id)
+        .maybeSingle();
+      if (cloudOutlet) {
+        outlet.currency = cloudOutlet.currency ?? undefined;
+        outlet.taxRate = Number(cloudOutlet.tax_rate ?? 7.5);
+        outlet.logo = cloudOutlet.logo ?? undefined;
+        await db.outlets.put(outlet);
+      }
+    }
+
     if (!outlet.currency && outlet.merchantId) {
       const merchant = await db.merchants.get(outlet.merchantId);
       if (merchant) outlet.currency = merchant.currency;
+      if (merchant) outlet.taxRate = merchant.taxRate;
     }
 
     const session: OutletSession = { outlet, staff };
@@ -513,6 +565,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setOutletSession(null);
     sessionStorage.removeItem(OUTLET_SESSION_KEY);
+    await db.clearCachedData();
   };
 
   return (
@@ -552,12 +605,13 @@ function mapSupabaseMerchant(row: Record<string, any>): Merchant {
     ownerName: row.owner_name,
     email: row.email,
     phone: row.phone,
-    passwordHash: row.password_hash ?? "",
+    // Authentication secrets are never copied into Dexie.
+    passwordHash: "",
     tier: row.tier,
     subscriptionStatus: row.subscription_status,
     subscriptionExpiry: row.subscription_expiry,
     address: row.address,
-    logo: row.logo,
+    logo: row.logo ?? undefined,
     currency: row.currency ?? "NGN",
     taxRate: row.tax_rate ?? 7.5,
     createdAt: row.created_at,
@@ -589,9 +643,11 @@ function mapSupabaseOutlet(row: Record<string, any>): Outlet {
     name: row.name,
     address: row.address,
     phone: row.phone ?? "",
+    logo: row.logo ?? undefined,
     // Pairing secrets are deliberately never returned to the browser.
     pin: "",
     currency: row.currency ?? undefined,
+    taxRate: Number(row.tax_rate ?? 7.5),
     isActive: row.is_active ?? true,
     taxEnabled: row.tax_enabled ?? true,
     receiptFooter: row.receipt_footer ?? "",
@@ -665,6 +721,18 @@ async function hydrateOutletData(outletId: string) {
           updatedAt: row.updated_at,
           syncStatus: "synced" as const,
         })),
+      );
+      const cloudProductIds = new Set(
+        (products.data ?? []).map((row: any) => row.id),
+      );
+      const cachedProducts = await db.products
+        .where("outletId")
+        .equals(outletId)
+        .toArray();
+      await db.products.bulkDelete(
+        cachedProducts
+          .filter((product) => !cloudProductIds.has(product.id))
+          .map((product) => product.id),
       );
       await db.customers.bulkPut(
         (customers.data ?? []).map((row: any) => ({

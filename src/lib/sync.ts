@@ -10,6 +10,7 @@ import type {
   Staff,
   Expense,
   StockMovement,
+  AuditLog,
 } from "../types";
 
 export type SyncTable =
@@ -21,7 +22,8 @@ export type SyncTable =
   | "customers"
   | "staff"
   | "expenses"
-  | "stockMovements";
+  | "stockMovements"
+  | "auditLogs";
 
 export type SyncableRecord =
   | Merchant
@@ -32,7 +34,8 @@ export type SyncableRecord =
   | Customer
   | Staff
   | Expense
-  | StockMovement;
+  | StockMovement
+  | AuditLog;
 
 const SUPABASE_TABLE_MAP: Record<SyncTable, string> = {
   merchants: "merchants",
@@ -44,6 +47,7 @@ const SUPABASE_TABLE_MAP: Record<SyncTable, string> = {
   staff: "staff",
   expenses: "expenses",
   stockMovements: "stock_movements",
+  auditLogs: "audit_logs",
 };
 
 const FIELD_MAP: Record<SyncTable, Record<string, string>> = {
@@ -60,7 +64,9 @@ const FIELD_MAP: Record<SyncTable, Record<string, string>> = {
   outlets: {
     merchantId: "merchant_id",
     outletCode: "outlet_code",
+    logo: "logo",
     currency: "currency",
+    taxRate: "tax_rate",
     isActive: "is_active",
     taxEnabled: "tax_enabled",
     receiptFooter: "receipt_footer",
@@ -128,7 +134,23 @@ const FIELD_MAP: Record<SyncTable, Record<string, string>> = {
     saleId: "sale_id",
     createdAt: "created_at",
   },
+  auditLogs: {
+    outletId: "outlet_id",
+    actorId: "actor_id",
+    actorName: "actor_name",
+    actorRole: "actor_role",
+    productId: "product_id",
+    productName: "product_name",
+    saleId: "sale_id",
+    receiptNumber: "receipt_number",
+    createdAt: "created_at",
+  },
 };
+
+export async function recordAuditLog(log: AuditLog) {
+  await db.auditLogs.put(log);
+  return syncRecord("auditLogs", log);
+}
 
 function getSupabaseTableName(table: SyncTable) {
   return SUPABASE_TABLE_MAP[table] ?? table;
@@ -164,13 +186,16 @@ export async function syncPendingDataForOutlet(outletId: string) {
     "sales",
     "expenses",
     "stockMovements",
+    "auditLogs",
   ];
   for (const table of orderedTables) {
     const dexieTable = (db as Record<string, any>)[table];
     const records = await dexieTable
       .where("outletId")
       .equals(outletId)
-      .filter((record: { syncStatus: string }) => record.syncStatus === "pending")
+      .filter(
+        (record: { syncStatus: string }) => record.syncStatus === "pending",
+      )
       .toArray();
     for (const record of records) await syncRecord(table, record);
   }
@@ -236,6 +261,7 @@ export async function syncPendingData() {
     { table: "staff", field: "syncStatus" },
     { table: "expenses", field: "syncStatus" },
     { table: "stockMovements", field: "syncStatus" },
+    { table: "auditLogs", field: "syncStatus" },
   ];
 
   for (const entry of tables) {

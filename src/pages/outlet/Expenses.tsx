@@ -303,6 +303,7 @@ export default function ExpensesPage() {
   // ---------------------------------------------------------------------------
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
+  const outletCurrency = outlet.currency ?? "NGN";
   const staff = outletSession!.staff;
   const { success, error: showError } = useToast();
 
@@ -493,7 +494,7 @@ export default function ExpensesPage() {
       {/* Page Header Component with Action Button */}
       <Header
         title="Expenses"
-        subtitle={`This month: ${formatCurrency(totalMonth)}`}
+        subtitle={`This month: ${formatCurrency(totalMonth, outletCurrency)}`}
         actions={
           <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
             Record Expense
@@ -511,7 +512,7 @@ export default function ExpensesPage() {
               >
                 <p className="text-xs text-pos-muted mb-1">{cat}</p>
                 <p className="text-lg font-bold text-pos-text">
-                  {formatCurrency(total)}
+                  {formatCurrency(total, outletCurrency)}
                 </p>
               </div>
             ))}
@@ -567,7 +568,7 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-4 py-3 text-pos-text">{e.description}</td>
                     <td className="px-4 py-3 font-semibold text-red-400 whitespace-nowrap">
-                      {formatCurrency(e.amount)}
+                      {formatCurrency(e.amount, outletCurrency)}
                     </td>
                     {/* Conditionally render actions column (Edit/Delete buttons) only for managers */}
                     {isManager && (

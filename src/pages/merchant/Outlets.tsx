@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   Plus,
   Store,
@@ -10,6 +10,8 @@ import {
   EyeOff,
   Copy,
   Check,
+  Upload,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/db/database";
@@ -20,6 +22,7 @@ import Modal from "@/components/ui/Modal";
 import Badge from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { syncRecord } from "@/lib/sync";
+import { supabase } from "@/lib/supabase";
 import { generateId, formatDateShort } from "@/utils/helpers";
 import type { Outlet } from "@/types";
 import { TIER_LIMITS } from "@/types";
@@ -31,6 +34,7 @@ interface OutletForm {
   name: string;
   address: string;
   phone: string;
+  logo: string;
   pin: string;
   confirmPin: string;
   taxEnabled: boolean;
@@ -42,6 +46,7 @@ const defaultForm: OutletForm = {
   name: "",
   address: "",
   phone: "",
+  logo: "",
   pin: "",
   confirmPin: "",
   taxEnabled: true,
@@ -67,6 +72,10 @@ export default function OutletsPage() {
   const [showPin, setShowPin] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   /**
    * Fetches all outlets assigned to the current active merchant from IndexedDB.
@@ -112,6 +121,7 @@ export default function OutletsPage() {
   const openCreate = () => {
     setEditingOutlet(null);
     setForm(defaultForm);
+    resetLogoState();
     setShowModal(true);
   };
 
@@ -125,12 +135,74 @@ export default function OutletsPage() {
       name: outlet.name,
       address: outlet.address,
       phone: outlet.phone ?? "",
+      logo: outlet.logo ?? "",
       pin: "",
       confirmPin: "",
       taxEnabled: outlet.taxEnabled,
       receiptFooter: outlet.receiptFooter ?? "",
     });
+    setLogoFile(null);
+    setLogoPreview(outlet.logo ?? null);
+    if (logoInputRef.current) logoInputRef.current.value = "";
     setShowModal(true);
+  };
+
+  const resetLogoState = () => {
+    setLogoFile(null);
+    setLogoPreview(null);
+    if (logoInputRef.current) logoInputRef.current.value = "";
+  };
+
+  const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showError("Please select a PNG, JPG, or WebP image.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      showError("Outlet logo must be smaller than 2MB.");
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
+
+  const removeLogo = () => {
+    resetLogoState();
+    setForm((previous) => ({ ...previous, logo: "" }));
+  };
+
+  const uploadOutletLogo = async (
+    outletId: string,
+  ): Promise<string | null> => {
+    if (!logoFile) return form.logo || null;
+
+    setUploadingLogo(true);
+    try {
+      const extension =
+        logoFile.name.split(".").pop()?.toLowerCase() || "jpg";
+      const path = `outlet-logos/${merchant.id}/${outletId}-${Date.now()}.${extension}`;
+      const { data, error } = await supabase.storage
+        .from("product-images")
+        .upload(path, logoFile, { cacheControl: "3600", upsert: true });
+
+      if (error) throw error;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("product-images")
+        .getPublicUrl(data.path);
+
+      return publicUrlData.publicUrl;
+    } catch (err: any) {
+      showError(`Outlet logo upload failed: ${err.message}`);
+      return null;
+    } finally {
+      setUploadingLogo(false);
+    }
   };
 
   /**
@@ -157,6 +229,13 @@ export default function OutletsPage() {
     setSaving(true);
     try {
       const now = new Date().toISOString();
+      const outletId = editingOutlet?.id ?? generateId();
+      let logo = form.logo;
+      if (logoFile) {
+        const uploadedLogo = await uploadOutletLogo(outletId);
+        if (!uploadedLogo) return;
+        logo = uploadedLogo;
+      }
 
       if (editingOutlet) {
         // Prepare patch payload for existing outlet
@@ -164,6 +243,7 @@ export default function OutletsPage() {
           name: form.name.trim(),
           address: form.address.trim(),
           phone: form.phone.trim(),
+          logo: logo.trim() || undefined,
           taxEnabled: form.taxEnabled,
           receiptFooter: form.receiptFooter.trim(),
           updatedAt: now,
@@ -174,13 +254,17 @@ export default function OutletsPage() {
         const updatedOutlet = await db.outlets.get(editingOutlet.id);
         if (updatedOutlet) {
           const result = await syncRecord("outlets", updatedOutlet);
-          if (!result.ok && !result.skipped) throw new Error((result.error as Error)?.message || "Outlet could not be saved to Supabase.");
+          if (!result.ok && !result.skipped)
+            throw new Error(
+              (result.error as Error)?.message ||
+                "Outlet could not be saved to Supabase.",
+            );
         }
         success("Outlet configuration updated.");
       } else {
         // Construct entity for brand new outlet creation
         const outletCode = generateOutletCode();
-        const newOutletId = generateId();
+        const newOutletId = outletId;
 
         const outlet: Outlet & Record<string, any> = {
           id: newOutletId,
@@ -189,6 +273,7 @@ export default function OutletsPage() {
           name: form.name.trim(),
           address: form.address.trim(),
           phone: form.phone.trim(),
+          logo: logo.trim() || undefined,
           // Staff Supabase Auth is the terminal credential. Do not create or
           // retain a browser-managed outlet secret.
           pin: "",
@@ -204,12 +289,16 @@ export default function OutletsPage() {
         const result = await syncRecord("outlets", outlet);
         if (!result.ok && !result.skipped) {
           await db.outlets.delete(newOutletId);
-          throw new Error((result.error as Error)?.message || "Outlet could not be created in Supabase.");
+          throw new Error(
+            (result.error as Error)?.message ||
+              "Outlet could not be created in Supabase.",
+          );
         }
         success(`Outlet created! Pair Code: ${outletCode}`);
       }
 
       setShowModal(false);
+      resetLogoState();
       loadOutlets();
     } catch (err: any) {
       showError(err.message || "Failed to save outlet.");
@@ -412,7 +501,7 @@ export default function OutletsPage() {
             </Button>
             <Button
               onClick={handleSave}
-              loading={saving}
+              loading={saving || uploadingLogo}
               className="w-full sm:w-auto"
             >
               {editingOutlet ? "Save Changes" : "Create Outlet"}
@@ -442,6 +531,59 @@ export default function OutletsPage() {
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
           />
+          <div>
+            <label className="block text-xs font-medium text-pos-muted mb-1.5">
+              Outlet Logo (optional)
+            </label>
+            <div className="flex items-center gap-4">
+              {logoPreview ? (
+                <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-pos-border bg-pos-bg shrink-0 group">
+                  <img
+                    src={logoPreview}
+                    alt="Outlet logo preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={removeLogo}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-red-500 transition-colors"
+                    title="Remove logo"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="w-20 h-20 rounded-lg border-2 border-dashed border-pos-border hover:border-blue-500/50 bg-pos-bg flex flex-col items-center justify-center text-pos-muted cursor-pointer transition-colors shrink-0"
+                >
+                  <Upload size={18} className="mb-1" />
+                  <span className="text-[10px]">Upload</span>
+                </button>
+              )}
+              <div className="text-xs text-pos-muted space-y-1">
+                <input
+                  type="file"
+                  ref={logoInputRef}
+                  accept="image/png, image/jpeg, image/webp"
+                  onChange={handleLogoChange}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => logoInputRef.current?.click()}
+                >
+                  {logoPreview ? "Change Image" : "Choose Image"}
+                </Button>
+                <p className="text-[11px] opacity-70">
+                  PNG, JPG, or WebP up to 2MB.
+                </p>
+              </div>
+            </div>
+          </div>
           {/* PIN inputs for POS device terminal access authorization */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input

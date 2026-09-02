@@ -172,6 +172,7 @@ import MerchantStaff from "./pages/merchant/staffPage";
 import BillingPage from "./pages/merchant/Billing";
 import MerchantSettings from "./pages/merchant/Settings";
 import MerchantReports from "./pages/merchant/Reports";
+import MerchantActivityLog from "./pages/merchant/ActivityLog";
 
 // Outlet / POS Pages
 import OutletDashboard from "./pages/outlet/Dashboard";
@@ -206,6 +207,7 @@ function MerchantRoutes() {
         <Route path="staff" element={<MerchantStaff />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="reports" element={<MerchantReports />} />
+        <Route path="activity" element={<MerchantActivityLog />} />
         <Route path="settings" element={<MerchantSettings />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>

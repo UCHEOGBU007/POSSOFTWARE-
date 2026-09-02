@@ -120,7 +120,11 @@ export default function OutletDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
             label="Today's Revenue"
-            value={isCashier ? "******" : formatCurrency(todayRevenue)}
+            value={
+              isCashier
+                ? "******"
+                : formatCurrency(todayRevenue, outletCurrency)
+            }
             icon={<TrendingUp size={20} />}
             iconColor="text-emerald-400"
           />

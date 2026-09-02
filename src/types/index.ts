@@ -182,10 +182,15 @@
 
 export type MerchantTier = "basic" | "standard" | "premium";
 export type SubscriptionStatus = "active" | "expired" | "trial";
-export type PaymentMethod = "cash" | "card" | "transfer" | "pos" | "wallet";
+export type PaymentMethod = "cash" | "transfer" | "card" | "qris";
 export type SaleStatus = "completed" | "refunded" | "void";
 export type StaffRole = "manager" | "cashier";
 export type StockMovementType = "in" | "out" | "adjust" | "sale" | "return";
+export type AuditAction =
+  | "product_added"
+  | "product_edited"
+  | "product_deleted"
+  | "sale_refunded";
 export type SyncStatus = "pending" | "synced";
 export type BillingCycle = "monthly" | "yearly";
 
@@ -215,7 +220,9 @@ export interface Outlet {
   name: string;
   address: string;
   phone?: string;
+  logo?: string;
   currency?: string;
+  taxRate?: number;
   pin: string;
   isActive: boolean;
   taxEnabled: boolean;
@@ -252,6 +259,22 @@ export interface Product {
   trackStock: boolean;
   createdAt: string;
   updatedAt: string;
+  syncStatus: SyncStatus;
+}
+
+export interface AuditLog {
+  id: string;
+  outletId: string;
+  action: AuditAction;
+  actorId?: string;
+  actorName: string;
+  actorRole?: string;
+  productId?: string;
+  productName?: string;
+  saleId?: string;
+  receiptNumber?: string;
+  details?: string;
+  createdAt: string;
   syncStatus: SyncStatus;
 }
 

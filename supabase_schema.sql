@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS public.merchants (
   owner_name          text NOT NULL,
   email               text NOT NULL UNIQUE,
   phone               text NOT NULL,
-  password_hash       text, -- Legacy column retained for compatibility; revoked below
   tier                text NOT NULL CHECK (tier IN ('basic','standard','premium')),
   subscription_status text NOT NULL CHECK (subscription_status IN ('active','expired','trial')),
   subscription_expiry timestamptz NOT NULL,
@@ -32,8 +31,9 @@ CREATE TABLE IF NOT EXISTS public.outlets (
   address         text NOT NULL,
   phone           text,
   outlet_code     text UNIQUE,
+  logo            text,
   currency        text,
-  pin             text, -- Legacy column
+  tax_rate        numeric(5,2) NOT NULL DEFAULT 7.5,
   is_active       boolean NOT NULL DEFAULT true,
   tax_enabled     boolean NOT NULL DEFAULT true,
   receipt_footer  text,
@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS public.outlets (
 
 CREATE INDEX IF NOT EXISTS outlets_merchant_id_idx ON public.outlets(merchant_id);
 CREATE INDEX IF NOT EXISTS outlets_outlet_code_idx ON public.outlets(outlet_code);
+ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS tax_rate numeric(5,2) NOT NULL DEFAULT 7.5;
+ALTER TABLE public.outlets ADD COLUMN IF NOT EXISTS logo text;
+-- Credential material belongs only in auth.users. Remove legacy application
+-- columns from existing installations as well.
+ALTER TABLE public.merchants DROP COLUMN IF EXISTS password_hash;
+ALTER TABLE public.outlets DROP COLUMN IF EXISTS pin;
 
 CREATE TABLE IF NOT EXISTS public.categories (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,7 +108,6 @@ CREATE TABLE IF NOT EXISTS public.staff (
   name        text NOT NULL,
   email       text NOT NULL UNIQUE,
   phone       text,
-  pin         text, -- Legacy column
   role        text NOT NULL CHECK (role IN ('manager','cashier')),
   is_active   boolean NOT NULL DEFAULT true,
   created_at  timestamptz NOT NULL DEFAULT now(),
@@ -111,6 +116,7 @@ CREATE TABLE IF NOT EXISTS public.staff (
 
 CREATE INDEX IF NOT EXISTS staff_outlet_id_idx ON public.staff(outlet_id);
 CREATE INDEX IF NOT EXISTS staff_email_idx ON public.staff(email);
+ALTER TABLE public.staff DROP COLUMN IF EXISTS pin;
 
 CREATE TABLE IF NOT EXISTS public.sales (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -123,7 +129,7 @@ CREATE TABLE IF NOT EXISTS public.sales (
   total           numeric(12,2) NOT NULL,
   amount_paid     numeric(12,2) NOT NULL,
   change          numeric(12,2) NOT NULL DEFAULT 0,
-  payment_method  text NOT NULL CHECK (payment_method IN ('cash','card','transfer','pos','wallet')),
+  payment_method  text NOT NULL CHECK (payment_method IN ('cash','transfer','card','qris')),
   status          text NOT NULL CHECK (status IN ('completed','refunded','void')) DEFAULT 'completed',
   customer_id     uuid REFERENCES public.customers(id) ON DELETE SET NULL,
   customer_name   text,
@@ -138,6 +144,18 @@ CREATE TABLE IF NOT EXISTS public.sales (
 CREATE INDEX IF NOT EXISTS sales_outlet_id_idx ON public.sales(outlet_id);
 CREATE INDEX IF NOT EXISTS sales_created_at_idx ON public.sales(created_at);
 CREATE INDEX IF NOT EXISTS sales_receipt_number_idx ON public.sales(receipt_number);
+-- Normalize payment values from older installations before enforcing the new list.
+UPDATE public.sales
+SET payment_method = CASE payment_method
+  WHEN 'atm_card' THEN 'card'
+  WHEN 'pos' THEN 'card'
+  WHEN 'wallet' THEN 'qris'
+  ELSE payment_method
+END
+WHERE payment_method IN ('card', 'pos', 'wallet');
+ALTER TABLE public.sales DROP CONSTRAINT IF EXISTS sales_payment_method_check;
+ALTER TABLE public.sales ADD CONSTRAINT sales_payment_method_check
+  CHECK (payment_method IN ('cash','transfer','card','qris'));
 
 CREATE TABLE IF NOT EXISTS public.expenses (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -171,6 +189,24 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
 CREATE INDEX IF NOT EXISTS stock_movements_outlet_id_idx ON public.stock_movements(outlet_id);
 CREATE INDEX IF NOT EXISTS stock_movements_product_id_idx ON public.stock_movements(product_id);
 
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outlet_id      uuid NOT NULL REFERENCES public.outlets(id) ON DELETE CASCADE,
+  action         text NOT NULL CHECK (action IN ('product_added', 'product_edited', 'product_deleted', 'sale_refunded')),
+  actor_id       uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  actor_name     text NOT NULL,
+  actor_role     text,
+  product_id     uuid,
+  product_name   text,
+  sale_id        uuid REFERENCES public.sales(id) ON DELETE SET NULL,
+  receipt_number text,
+  details        text,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS audit_logs_outlet_created_idx ON public.audit_logs(outlet_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_action_created_idx ON public.audit_logs(action, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS public.api_rate_limits (
   id         bigserial PRIMARY KEY,
   actor_id   uuid NOT NULL,
@@ -184,8 +220,6 @@ CREATE INDEX IF NOT EXISTS api_rate_limits_lookup_idx ON public.api_rate_limits(
 -- ============================================================
 
 REVOKE ALL ON public.api_rate_limits FROM anon, authenticated;
-REVOKE ALL (password_hash) ON TABLE public.merchants FROM anon, authenticated;
-REVOKE ALL (pin) ON TABLE public.staff FROM anon, authenticated;
 
 -- 3. AUTOMATED MERCHANT PROFILING
 -- ============================================================
@@ -205,7 +239,7 @@ BEGIN
     COALESCE(new.raw_user_meta_data->>'owner_name', 'Merchant'),
     LOWER(new.email),
     COALESCE(new.raw_user_meta_data->>'phone', ''),
-    COALESCE(new.raw_user_meta_data->>'tier', 'basic'),
+    'basic',
     'trial', NOW() + INTERVAL '30 days', 'NGN', 7.5
   ) ON CONFLICT (id) DO NOTHING;
   RETURN new;
@@ -272,6 +306,77 @@ SET search_path = public, pg_temp AS $$
   SELECT public.is_staff_of_outlet($1) OR public.is_merchant_of_outlet($1);
 $$;
 
+CREATE OR REPLACE FUNCTION public.can_manage_outlet(outlet_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+  SELECT public.is_merchant_of_outlet($1) OR EXISTS (
+    SELECT 1 FROM public.staff
+    WHERE id = auth.uid()
+      AND staff.outlet_id = $1
+      AND staff.role = 'manager'
+      AND staff.is_active = true
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.prevent_subscription_tampering()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+BEGIN
+  IF auth.role() <> 'service_role'
+    AND (NEW.tier IS DISTINCT FROM OLD.tier
+      OR NEW.subscription_status IS DISTINCT FROM OLD.subscription_status
+      OR NEW.subscription_expiry IS DISTINCT FROM OLD.subscription_expiry) THEN
+    RAISE EXCEPTION 'Subscription fields can only be changed by the billing service'
+      USING errcode = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS merchants_protect_subscription ON public.merchants;
+CREATE TRIGGER merchants_protect_subscription
+  BEFORE UPDATE ON public.merchants
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_subscription_tampering();
+
+CREATE OR REPLACE FUNCTION public.set_audit_actor()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.staff
+    WHERE id = auth.uid() AND outlet_id = NEW.outlet_id AND is_active
+  ) THEN
+    SELECT id, name, role
+      INTO NEW.actor_id, NEW.actor_name, NEW.actor_role
+      FROM public.staff
+      WHERE id = auth.uid();
+  ELSIF EXISTS (
+    SELECT 1 FROM public.outlets
+    WHERE id = NEW.outlet_id AND merchant_id = auth.uid()
+  ) THEN
+    SELECT id, owner_name, 'merchant'
+      INTO NEW.actor_id, NEW.actor_name, NEW.actor_role
+      FROM public.merchants
+      WHERE id = auth.uid();
+  ELSE
+    RAISE EXCEPTION 'Unauthorised audit event' USING errcode = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS audit_logs_set_actor ON public.audit_logs;
+CREATE TRIGGER audit_logs_set_actor
+  BEFORE INSERT ON public.audit_logs
+  FOR EACH ROW EXECUTE FUNCTION public.set_audit_actor();
+
 -- 5. ROW LEVEL SECURITY POLICIES
 -- ============================================================
 
@@ -284,6 +389,15 @@ ALTER TABLE public.staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "audit_logs_select" ON public.audit_logs;
+CREATE POLICY "audit_logs_select" ON public.audit_logs FOR SELECT
+  USING (public.is_merchant_of_outlet(outlet_id) OR public.is_staff_of_outlet(outlet_id));
+
+DROP POLICY IF EXISTS "audit_logs_insert" ON public.audit_logs;
+CREATE POLICY "audit_logs_insert" ON public.audit_logs FOR INSERT
+  WITH CHECK (public.can_access_outlet(outlet_id));
 
 -- MERCHANTS: View/update own account profile only
 DROP POLICY IF EXISTS "merchants_own_data" ON public.merchants;
@@ -330,29 +444,52 @@ CREATE POLICY "staff_merchant_delete" ON public.staff FOR DELETE
 
 -- STANDARD OUTLET-LEVEL TABLES
 DROP POLICY IF EXISTS "categories_access" ON public.categories;
-CREATE POLICY "categories_access" ON public.categories
-  FOR ALL USING (public.can_access_outlet(outlet_id))
-  WITH CHECK (public.can_access_outlet(outlet_id));
+DROP POLICY IF EXISTS "categories_read" ON public.categories;
+DROP POLICY IF EXISTS "categories_manage" ON public.categories;
+CREATE POLICY "categories_read" ON public.categories FOR SELECT
+  USING (public.can_access_outlet(outlet_id));
+CREATE POLICY "categories_manage" ON public.categories FOR ALL
+  USING (public.can_manage_outlet(outlet_id))
+  WITH CHECK (public.can_manage_outlet(outlet_id));
 
 DROP POLICY IF EXISTS "products_access" ON public.products;
-CREATE POLICY "products_access" ON public.products
-  FOR ALL USING (public.can_access_outlet(outlet_id))
-  WITH CHECK (public.can_access_outlet(outlet_id));
+DROP POLICY IF EXISTS "products_read" ON public.products;
+DROP POLICY IF EXISTS "products_manage" ON public.products;
+CREATE POLICY "products_read" ON public.products FOR SELECT
+  USING (public.can_access_outlet(outlet_id));
+CREATE POLICY "products_manage" ON public.products FOR ALL
+  USING (public.can_manage_outlet(outlet_id))
+  WITH CHECK (public.can_manage_outlet(outlet_id));
 
 DROP POLICY IF EXISTS "customers_access" ON public.customers;
-CREATE POLICY "customers_access" ON public.customers
-  FOR ALL USING (public.can_access_outlet(outlet_id))
+DROP POLICY IF EXISTS "customers_read" ON public.customers;
+DROP POLICY IF EXISTS "customers_insert" ON public.customers;
+DROP POLICY IF EXISTS "customers_manage" ON public.customers;
+CREATE POLICY "customers_read" ON public.customers FOR SELECT
+  USING (public.can_access_outlet(outlet_id));
+CREATE POLICY "customers_insert" ON public.customers FOR INSERT
   WITH CHECK (public.can_access_outlet(outlet_id));
+CREATE POLICY "customers_manage" ON public.customers FOR ALL
+  USING (public.can_manage_outlet(outlet_id))
+  WITH CHECK (public.can_manage_outlet(outlet_id));
 
 DROP POLICY IF EXISTS "expenses_access" ON public.expenses;
-CREATE POLICY "expenses_access" ON public.expenses
-  FOR ALL USING (public.can_access_outlet(outlet_id))
-  WITH CHECK (public.can_access_outlet(outlet_id));
+DROP POLICY IF EXISTS "expenses_read" ON public.expenses;
+DROP POLICY IF EXISTS "expenses_manage" ON public.expenses;
+CREATE POLICY "expenses_read" ON public.expenses FOR SELECT
+  USING (public.can_access_outlet(outlet_id));
+CREATE POLICY "expenses_manage" ON public.expenses FOR ALL
+  USING (public.can_manage_outlet(outlet_id))
+  WITH CHECK (public.can_manage_outlet(outlet_id));
 
 DROP POLICY IF EXISTS "stock_movements_access" ON public.stock_movements;
-CREATE POLICY "stock_movements_access" ON public.stock_movements
-  FOR ALL USING (public.can_access_outlet(outlet_id))
-  WITH CHECK (public.can_access_outlet(outlet_id));
+DROP POLICY IF EXISTS "stock_movements_read" ON public.stock_movements;
+DROP POLICY IF EXISTS "stock_movements_manage" ON public.stock_movements;
+CREATE POLICY "stock_movements_read" ON public.stock_movements FOR SELECT
+  USING (public.can_access_outlet(outlet_id));
+CREATE POLICY "stock_movements_manage" ON public.stock_movements FOR ALL
+  USING (public.can_manage_outlet(outlet_id))
+  WITH CHECK (public.can_manage_outlet(outlet_id));
 
 -- SALES: Read-only via client. Writes managed exclusively by record_sale
 DROP POLICY IF EXISTS "sales_read_access" ON public.sales;
@@ -413,7 +550,7 @@ BEGIN
     RAISE EXCEPTION 'A sale must contain between 1 and 100 items' USING errcode = '22023';
   END IF;
   
-  IF p_payment_method NOT IN ('cash','card','transfer','pos','wallet') OR p_amount_paid < 0 THEN
+  IF p_payment_method NOT IN ('cash','transfer','card','qris') OR p_amount_paid < 0 THEN
     RAISE EXCEPTION 'Invalid payment details provided' USING errcode = '22023';
   END IF;
 
@@ -548,3 +685,18 @@ SELECT
 FROM public.outlets o
 LEFT JOIN public.sales s ON s.outlet_id = o.id AND s.status = 'completed'
 GROUP BY o.id, o.name, o.merchant_id, DATE_TRUNC('day', s.created_at);
+
+-- FINAL PAYMENT-METHOD MIGRATION
+-- Run this block on existing databases as well as new installations.
+UPDATE public.sales
+SET payment_method = CASE payment_method
+  WHEN 'atm_card' THEN 'card'
+  WHEN 'pos' THEN 'card'
+  WHEN 'wallet' THEN 'qris'
+  ELSE payment_method
+END
+WHERE payment_method IN ('card', 'pos', 'wallet');
+
+ALTER TABLE public.sales DROP CONSTRAINT IF EXISTS sales_payment_method_check;
+ALTER TABLE public.sales ADD CONSTRAINT sales_payment_method_check
+  CHECK (payment_method IN ('cash', 'transfer', 'card', 'qris'));
