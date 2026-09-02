@@ -20,10 +20,18 @@ interface OutletSession {
   staff: Staff | null;
 }
 
+interface AdminSession {
+  email: string;
+  password?: string;
+}
+
 interface AuthContextType {
   merchantSession: MerchantSession | null;
   outletSession: OutletSession | null;
+  adminSession: AdminSession | null;
   loginMerchant: (email: string, password: string) => Promise<void>;
+  loginAdmin: (email: string, password: string) => Promise<void>;
+  logoutAdmin: () => void;
   logoutMerchant: () => void;
   loginStaff: (email: string, pinInput: string) => Promise<OutletSession>;
   logoutOutlet: () => void;
@@ -55,7 +63,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const MERCHANT_SESSION_KEY = "pos_merchant_session";
 const OUTLET_SESSION_KEY = "pos_outlet_session";
 const MERCHANT_SELECT_COLUMNS =
-  "id, business_name, owner_name, email, phone, tier, subscription_status, subscription_expiry, address, logo, currency, tax_rate, created_at, updated_at";
+  "id, business_name, owner_name, email, phone, tier, subscription_status, subscription_expiry, approval_status, requested_tier, billing_cycle, approved_at, deletion_scheduled_at, address, logo, currency, tax_rate, created_at, updated_at";
 const STAFF_SELECT_COLUMNS =
   "id, outlet_id, name, email, phone, role, is_active, created_at, updated_at";
 
@@ -67,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [outletSession, setOutletSession] = useState<OutletSession | null>(
     null,
   );
+  const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -101,6 +110,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (session?.user) {
             const uid = session.user.id;
+            const { data: admin } = await supabase
+              .from("platform_admins")
+              .select("id, email")
+              .eq("id", uid)
+              .maybeSingle();
+            if (admin) {
+              setAdminSession({ email: admin.email });
+              setIsLoading(false);
+              return;
+            }
             const { data: cloudStaff } = await supabase
               .from("staff")
               .select(STAFF_SELECT_COLUMNS)
@@ -142,6 +161,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             if (merchant) {
+              try {
+                assertMerchantAccess(merchant);
+              } catch {
+                await supabase.auth.signOut().catch(() => {});
+                await db.clearCachedData();
+                return;
+              }
               setMerchantSession({ merchant });
               sessionStorage.setItem(
                 MERCHANT_SESSION_KEY,
@@ -225,11 +251,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!merchant) throw new Error("Account not found. Please register first.");
 
+    try {
+      assertMerchantAccess(merchant);
+    } catch (error) {
+      await supabase.auth.signOut().catch(() => {});
+      throw error;
+    }
+
     setMerchantSession({ merchant });
     sessionStorage.setItem(
       MERCHANT_SESSION_KEY,
       JSON.stringify({ merchantId: merchant.id }),
     );
+  };
+
+  // const loginAdmin = async (email: string, password: string) => {
+  //   if (!isConfigured)
+  //     throw new Error("Supabase must be configured for administrator login.");
+  //   const { data, error } = await supabase.auth.signInWithPassword({
+  //     email: email.trim().toLowerCase(),
+  //     password,
+  //   });
+  //   if (error || !data.user)
+  //     throw new Error("Invalid administrator credentials.");
+  //   const { data: admin, error: adminError } = await supabase
+  //     .from("platform_admins")
+  //     .select("id, email")
+  //     .eq("id", data.user.id)
+  //     .maybeSingle();
+  //   if (adminError || !admin) {
+  //     await supabase.auth.signOut().catch(() => {});
+  //     throw new Error("This account is not authorised for the admin portal.");
+  //   }
+  //   setAdminSession({ email: admin.email });
+  // };
+
+  const loginAdmin = async (email: string, password: string) => {
+    if (!isConfigured) {
+      throw new Error("Supabase must be configured for administrator login.");
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+
+    if (error || !data.user || !data.session?.access_token) {
+      throw new Error(error?.message || "Invalid administrator credentials.");
+    }
+
+    const { data: admin, error: adminError } = await supabase
+      .from("platform_admins")
+      .select("id, email")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    if (adminError || !admin) {
+      await supabase.auth.signOut().catch(() => {});
+      throw new Error("This account is not authorised for the admin portal.");
+    }
+
+    setAdminSession({ email: admin.email });
+  };
+
+  const logoutAdmin = async () => {
+    await supabase.auth.signOut().catch(() => {});
+    setAdminSession(null);
+    await db.clearCachedData();
   };
 
   const logoutMerchant = async () => {
@@ -251,18 +339,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (existing > 0)
       throw new Error("An account with this email already exists.");
 
-    const now = new Date().toISOString();
-    const expiry = new Date(
-      Date.now() + 30 * 24 * 60 * 60 * 1000,
-    ).toISOString();
-
-    let merchantId = generateId();
-    // Passwords are managed exclusively by Supabase Auth. Never cache a
-    // password hash in Dexie or send it to a public table.
-    const passwordHash = "";
-
     if (isConfigured) {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { error: authError } = await supabase.auth.signUp({
         email: normalizedEmail,
         password: data.password,
         options: {
@@ -271,16 +349,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             owner_name: data.ownerName.trim(),
             phone: data.phone.trim(),
             tier: data.tier,
+            billing_cycle: data.billingCycle ?? "monthly",
           },
         },
       });
-
-      if (authError) {
+      if (authError)
         throw new Error(authError.message || "Unable to create your account.");
-      } else if (authData.user) {
-        merchantId = authData.user.id;
-      }
+      await supabase.auth.signOut().catch(() => {});
+      await db.clearCachedData();
+      return;
     }
+
+    const now = new Date().toISOString();
+    const expiry = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const merchantId = generateId();
 
     const merchant: Merchant = {
       id: merchantId,
@@ -288,10 +372,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ownerName: data.ownerName,
       email: normalizedEmail,
       phone: data.phone,
-      passwordHash,
+      passwordHash: "",
       tier: data.tier,
       subscriptionStatus: "trial",
       subscriptionExpiry: expiry,
+      approvalStatus: "pending",
+      requestedTier: data.tier,
+      billingCycle: data.billingCycle,
       currency: "NGN",
       taxRate: 7.5,
       createdAt: now,
@@ -305,11 +392,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // means signUp returns no session yet.
     if (!isConfigured) await syncRecord("merchants", merchant);
 
-    setMerchantSession({ merchant });
-    sessionStorage.setItem(
-      MERCHANT_SESSION_KEY,
-      JSON.stringify({ merchantId: merchant.id }),
-    );
+    return;
   };
 
   const updateMerchant = async (data: Partial<Merchant>) => {
@@ -573,7 +656,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         merchantSession,
         outletSession,
+        adminSession,
         loginMerchant,
+        loginAdmin,
+        logoutAdmin,
         logoutMerchant,
         loginStaff,
         logoutOutlet,
@@ -610,6 +696,11 @@ function mapSupabaseMerchant(row: Record<string, any>): Merchant {
     tier: row.tier,
     subscriptionStatus: row.subscription_status,
     subscriptionExpiry: row.subscription_expiry,
+    approvalStatus: row.approval_status ?? "pending",
+    requestedTier: row.requested_tier ?? undefined,
+    billingCycle: row.billing_cycle ?? undefined,
+    approvedAt: row.approved_at ?? undefined,
+    deletionScheduledAt: row.deletion_scheduled_at ?? undefined,
     address: row.address,
     logo: row.logo ?? undefined,
     currency: row.currency ?? "NGN",
@@ -618,6 +709,20 @@ function mapSupabaseMerchant(row: Record<string, any>): Merchant {
     updatedAt: row.updated_at,
     syncStatus: "synced",
   };
+}
+
+function assertMerchantAccess(merchant: Merchant) {
+  if (merchant.approvalStatus !== "approved") {
+    throw new Error(
+      "Your merchant account is awaiting administrator approval.",
+    );
+  }
+  if (
+    merchant.subscriptionStatus === "expired" ||
+    new Date(merchant.subscriptionExpiry).getTime() <= Date.now()
+  ) {
+    throw new Error("Your subscription has expired. Contact support to renew.");
+  }
 }
 
 function mapSupabaseStaff(row: Record<string, any>): Staff {

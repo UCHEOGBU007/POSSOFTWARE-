@@ -182,6 +182,7 @@
 
 export type MerchantTier = "basic" | "standard" | "premium";
 export type SubscriptionStatus = "active" | "expired" | "trial";
+export type MerchantApprovalStatus = "pending" | "approved" | "rejected";
 export type PaymentMethod = "cash" | "transfer" | "card" | "qris";
 export type SaleStatus = "completed" | "refunded" | "void";
 export type StaffRole = "manager" | "cashier";
@@ -204,6 +205,11 @@ export interface Merchant {
   tier: MerchantTier;
   subscriptionStatus: SubscriptionStatus;
   subscriptionExpiry: string;
+  approvalStatus: MerchantApprovalStatus;
+  requestedTier?: MerchantTier;
+  billingCycle?: BillingCycle;
+  approvedAt?: string;
+  deletionScheduledAt?: string;
   address?: string;
   logo?: string;
   currency: string;

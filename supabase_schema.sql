@@ -16,12 +16,42 @@ CREATE TABLE IF NOT EXISTS public.merchants (
   tier                text NOT NULL CHECK (tier IN ('basic','standard','premium')),
   subscription_status text NOT NULL CHECK (subscription_status IN ('active','expired','trial')),
   subscription_expiry timestamptz NOT NULL,
+  approval_status     text NOT NULL DEFAULT 'pending' CHECK (approval_status IN ('pending','approved','rejected')),
+  requested_tier      text CHECK (requested_tier IN ('basic','standard','premium')),
+  billing_cycle       text CHECK (billing_cycle IN ('monthly','yearly')),
+  approved_at         timestamptz,
+  approved_by         uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  deletion_scheduled_at timestamptz,
   address             text,
   logo                text,
   currency            text NOT NULL DEFAULT 'NGN',
   tax_rate            numeric(5,2) NOT NULL DEFAULT 7.5,
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.merchants ADD COLUMN IF NOT EXISTS approval_status text NOT NULL DEFAULT 'pending'
+  CHECK (approval_status IN ('pending','approved','rejected'));
+ALTER TABLE public.merchants ADD COLUMN IF NOT EXISTS requested_tier text
+  CHECK (requested_tier IN ('basic','standard','premium'));
+ALTER TABLE public.merchants ADD COLUMN IF NOT EXISTS billing_cycle text
+  CHECK (billing_cycle IN ('monthly','yearly'));
+ALTER TABLE public.merchants ADD COLUMN IF NOT EXISTS approved_at timestamptz;
+ALTER TABLE public.merchants ADD COLUMN IF NOT EXISTS approved_by uuid REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE public.merchants ADD COLUMN IF NOT EXISTS deletion_scheduled_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS public.platform_admins (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.subscription_notifications (
+  id bigserial PRIMARY KEY,
+  merchant_id uuid NOT NULL REFERENCES public.merchants(id) ON DELETE CASCADE,
+  notification_type text NOT NULL,
+  sent_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (merchant_id, notification_type)
 );
 
 CREATE TABLE IF NOT EXISTS public.outlets (
@@ -232,7 +262,8 @@ SET search_path = public, pg_temp AS $$
 BEGIN
   INSERT INTO public.merchants (
     id, business_name, owner_name, email, phone, tier,
-    subscription_status, subscription_expiry, currency, tax_rate
+    subscription_status, subscription_expiry, approval_status, requested_tier,
+    billing_cycle, currency, tax_rate
   ) VALUES (
     new.id,
     COALESCE(new.raw_user_meta_data->>'business_name', 'New business'),
@@ -240,7 +271,12 @@ BEGIN
     LOWER(new.email),
     COALESCE(new.raw_user_meta_data->>'phone', ''),
     'basic',
-    'trial', NOW() + INTERVAL '30 days', 'NGN', 7.5
+    'trial', NOW() + INTERVAL '30 days', 'pending',
+    CASE WHEN new.raw_user_meta_data->>'tier' IN ('basic', 'standard', 'premium')
+      THEN new.raw_user_meta_data->>'tier' ELSE 'basic' END,
+    CASE WHEN new.raw_user_meta_data->>'billing_cycle' IN ('monthly', 'yearly')
+      THEN new.raw_user_meta_data->>'billing_cycle' ELSE 'monthly' END,
+    'NGN', 7.5
   ) ON CONFLICT (id) DO NOTHING;
   RETURN new;
 END;
@@ -277,10 +313,15 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp AS $$
   SELECT EXISTS (
-    SELECT 1 FROM public.staff
-    WHERE id = auth.uid()
-      AND staff.outlet_id = $1
-      AND staff.is_active = true
+    SELECT 1 FROM public.staff s
+    JOIN public.outlets o ON o.id = s.outlet_id
+    JOIN public.merchants m ON m.id = o.merchant_id
+    WHERE s.id = auth.uid()
+      AND s.outlet_id = $1
+      AND s.is_active = true
+      AND m.approval_status = 'approved'
+      AND m.subscription_status IN ('active', 'trial')
+      AND m.subscription_expiry > now()
   );
 $$;
 
@@ -292,8 +333,12 @@ SECURITY DEFINER
 SET search_path = public, pg_temp AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.outlets o
+    JOIN public.merchants m ON m.id = o.merchant_id
     WHERE o.id = $1
       AND o.merchant_id = auth.uid()
+      AND m.approval_status = 'approved'
+      AND m.subscription_status IN ('active', 'trial')
+      AND m.subscription_expiry > now()
   );
 $$;
 
@@ -304,6 +349,19 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp AS $$
   SELECT public.is_staff_of_outlet($1) OR public.is_merchant_of_outlet($1);
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_platform_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.platform_admins
+    WHERE id = auth.uid()
+      AND lower(email) = lower(auth.jwt() ->> 'email')
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.can_manage_outlet(outlet_id uuid)
@@ -327,11 +385,17 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp AS $$
 BEGIN
-  IF auth.role() <> 'service_role'
+  IF auth.role() <> 'service_role' AND NOT public.is_platform_admin()
     AND (NEW.tier IS DISTINCT FROM OLD.tier
       OR NEW.subscription_status IS DISTINCT FROM OLD.subscription_status
-      OR NEW.subscription_expiry IS DISTINCT FROM OLD.subscription_expiry) THEN
-    RAISE EXCEPTION 'Subscription fields can only be changed by the billing service'
+      OR NEW.subscription_expiry IS DISTINCT FROM OLD.subscription_expiry
+      OR NEW.approval_status IS DISTINCT FROM OLD.approval_status
+      OR NEW.requested_tier IS DISTINCT FROM OLD.requested_tier
+      OR NEW.billing_cycle IS DISTINCT FROM OLD.billing_cycle
+      OR NEW.approved_at IS DISTINCT FROM OLD.approved_at
+      OR NEW.approved_by IS DISTINCT FROM OLD.approved_by
+      OR NEW.deletion_scheduled_at IS DISTINCT FROM OLD.deletion_scheduled_at) THEN
+    RAISE EXCEPTION 'Plan and approval fields can only be changed by an administrator'
       USING errcode = '42501';
   END IF;
   RETURN NEW;
@@ -342,6 +406,58 @@ DROP TRIGGER IF EXISTS merchants_protect_subscription ON public.merchants;
 CREATE TRIGGER merchants_protect_subscription
   BEFORE UPDATE ON public.merchants
   FOR EACH ROW EXECUTE FUNCTION public.prevent_subscription_tampering();
+
+CREATE OR REPLACE FUNCTION public.admin_update_merchant(
+  p_merchant_id uuid,
+  p_approval_status text DEFAULT NULL,
+  p_tier text DEFAULT NULL,
+  p_subscription_expiry timestamptz DEFAULT NULL
+) RETURNS public.merchants
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+DECLARE
+  v_merchant public.merchants;
+BEGIN
+  IF NOT public.is_platform_admin() THEN
+    RAISE EXCEPTION 'Platform administrator access required' USING errcode = '42501';
+  END IF;
+  IF p_approval_status IS NOT NULL AND p_approval_status NOT IN ('pending', 'approved', 'rejected') THEN
+    RAISE EXCEPTION 'Invalid approval status' USING errcode = '22023';
+  END IF;
+  IF p_tier IS NOT NULL AND p_tier NOT IN ('basic', 'standard', 'premium') THEN
+    RAISE EXCEPTION 'Invalid merchant tier' USING errcode = '22023';
+  END IF;
+  UPDATE public.merchants
+  SET approval_status = COALESCE(p_approval_status, approval_status),
+      tier = COALESCE(p_tier, tier),
+      subscription_status = CASE
+        WHEN COALESCE(p_approval_status, approval_status) = 'approved' THEN 'active'
+        ELSE subscription_status
+      END,
+      subscription_expiry = COALESCE(p_subscription_expiry, subscription_expiry),
+      approved_at = CASE
+        WHEN p_approval_status = 'approved' THEN now()
+        ELSE approved_at
+      END,
+      approved_by = CASE
+        WHEN p_approval_status = 'approved' THEN auth.uid()
+        ELSE approved_by
+      END,
+      deletion_scheduled_at = CASE
+        WHEN p_approval_status = 'approved' THEN NULL
+        ELSE deletion_scheduled_at
+      END,
+      updated_at = now()
+  WHERE id = p_merchant_id
+  RETURNING * INTO v_merchant;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Merchant not found' USING errcode = 'P0002'; END IF;
+  RETURN v_merchant;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_update_merchant(uuid, text, text, timestamptz) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.admin_update_merchant(uuid, text, text, timestamptz) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.set_audit_actor()
 RETURNS trigger
@@ -390,6 +506,13 @@ ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subscription_notifications ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.subscription_notifications FROM anon, authenticated;
+
+DROP POLICY IF EXISTS "platform_admins_self" ON public.platform_admins;
+CREATE POLICY "platform_admins_self" ON public.platform_admins FOR SELECT
+  USING (id = auth.uid());
 
 DROP POLICY IF EXISTS "audit_logs_select" ON public.audit_logs;
 CREATE POLICY "audit_logs_select" ON public.audit_logs FOR SELECT
@@ -405,6 +528,10 @@ CREATE POLICY "merchants_own_data" ON public.merchants
   FOR ALL USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "merchants_platform_admin" ON public.merchants;
+CREATE POLICY "merchants_platform_admin" ON public.merchants FOR SELECT
+  USING (public.is_platform_admin());
+
 -- OUTLETS: Merchant full administration; staff read-only
 DROP POLICY IF EXISTS "outlets_select" ON public.outlets;
 DROP POLICY IF EXISTS "outlets_merchant_insert" ON public.outlets;
@@ -412,16 +539,26 @@ DROP POLICY IF EXISTS "outlets_merchant_update" ON public.outlets;
 DROP POLICY IF EXISTS "outlets_merchant_delete" ON public.outlets;
 
 CREATE POLICY "outlets_select" ON public.outlets FOR SELECT
-  USING (merchant_id = auth.uid() OR public.is_staff_of_outlet(id));
+  USING (public.is_merchant_of_outlet(id) OR public.is_staff_of_outlet(id));
 
 CREATE POLICY "outlets_merchant_insert" ON public.outlets FOR INSERT
-  WITH CHECK (merchant_id = auth.uid());
+  WITH CHECK (merchant_id = auth.uid() AND EXISTS (
+    SELECT 1 FROM public.merchants
+    WHERE id = auth.uid()
+      AND approval_status = 'approved'
+      AND subscription_status IN ('active', 'trial')
+      AND subscription_expiry > now()
+  ));
 
 CREATE POLICY "outlets_merchant_update" ON public.outlets FOR UPDATE
-  USING (merchant_id = auth.uid()) WITH CHECK (merchant_id = auth.uid());
+  USING (public.is_merchant_of_outlet(id)) WITH CHECK (merchant_id = auth.uid());
 
 CREATE POLICY "outlets_merchant_delete" ON public.outlets FOR DELETE
-  USING (merchant_id = auth.uid());
+  USING (public.is_merchant_of_outlet(id));
+
+DROP POLICY IF EXISTS "outlets_platform_admin" ON public.outlets;
+CREATE POLICY "outlets_platform_admin" ON public.outlets FOR SELECT
+  USING (public.is_platform_admin());
 
 -- STAFF: Merchant manages account rows; staff members can read self/outlet team
 DROP POLICY IF EXISTS "staff_select" ON public.staff;

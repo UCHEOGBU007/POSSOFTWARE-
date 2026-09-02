@@ -120,3 +120,14 @@ export function ProtectedOutletRoute({ children }: GuardProps) {
 
   return <>{children}</>;
 }
+
+export function ProtectedAdminRoute({ children }: GuardProps) {
+  const { adminSession, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) return null;
+  if (!adminSession) {
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
+  }
+  return <>{children}</>;
+}

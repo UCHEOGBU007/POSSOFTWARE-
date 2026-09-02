@@ -160,10 +160,13 @@ import logo from "@/assest/logo1.svg";
 import {
   ProtectedMerchantRoute,
   ProtectedOutletRoute,
+  ProtectedAdminRoute,
 } from "./pages/auth/ProtectedRoute";
 import MerchantLogin from "./pages/auth/MerchantLogin";
 import MerchantRegister from "./pages/auth/MerchantRegister";
 import OutletLogin from "./pages/auth/OutletLogin";
+import AdminLogin from "./pages/auth/AdminLogin";
+import MerchantManagement from "./pages/admin/MerchantManagement";
 
 // Merchant Pages
 import MerchantDashboard from "./pages/merchant/Dashboard";
@@ -252,11 +255,12 @@ function OutletRoutes() {
 }
 
 function RootRedirect() {
-  const { merchantSession, outletSession, isLoading } = useAuth();
+  const { merchantSession, outletSession, adminSession, isLoading } = useAuth();
 
   if (isLoading) return null;
   if (merchantSession) return <Navigate to="/merchant/dashboard" replace />;
   if (outletSession) return <Navigate to="/outlet/dashboard" replace />;
+  if (adminSession) return <Navigate to="/admin/merchants" replace />;
   return <Navigate to="/login" replace />;
 }
 
@@ -286,6 +290,7 @@ function AppInner() {
       <Route path="/merchant-login" element={<MerchantLogin />} />
       <Route path="/register" element={<MerchantRegister />} />
       <Route path="/outlet-login" element={<OutletLogin />} />
+      <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Protected Portal Routes */}
       <Route
@@ -302,6 +307,14 @@ function AppInner() {
           <ProtectedOutletRoute>
             <OutletRoutes />
           </ProtectedOutletRoute>
+        }
+      />
+      <Route
+        path="/admin/merchants"
+        element={
+          <ProtectedAdminRoute>
+            <MerchantManagement />
+          </ProtectedAdminRoute>
         }
       />
 

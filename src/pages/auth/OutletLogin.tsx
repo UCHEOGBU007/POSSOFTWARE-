@@ -134,7 +134,7 @@ import logo from "@/assest/logo1.svg";
  */
 export default function OutletLogin() {
   // Custom context hooks for authentication, UI feedback, and theme toggling
-  const { loginStaff } = useAuth();
+  const { loginStaff, logoutOutlet } = useAuth();
   const { success, error: showError } = useToast();
   const { theme, toggleTheme } = useTheme();
 
@@ -169,6 +169,7 @@ export default function OutletLogin() {
       success("Signed in to your assigned outlet.");
       navigate("/outlet/dashboard", { replace: true });
     } catch (error: any) {
+      await logoutOutlet();
       // Display failure message and reset password field for security
       showError(error?.message || "Unable to sign in to this outlet.");
       setPassword("");

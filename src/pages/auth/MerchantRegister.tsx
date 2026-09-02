@@ -99,8 +99,8 @@ export default function MerchantRegister() {
     setLoading(true);
     try {
       await registerMerchant({ ...form, tier: selectedTier, billingCycle });
-      success("Account created! Welcome to STOCKURA Pro.");
-      navigate("/merchant/dashboard");
+      success("Application submitted. Please await administrator approval before signing in.");
+      navigate("/login", { replace: true });
     } catch (err: any) {
       showError(err.message);
     } finally {
