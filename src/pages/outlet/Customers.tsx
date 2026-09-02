@@ -1,7 +1,6 @@
 // import { useEffect, useState } from "react";
 // import { Plus, Search, Users, Pencil, Trash2, Star } from "lucide-react";
 
-// // Fixed: Unified relative pathways to absolute paths to support production bundlers
 // import { useAuth } from "@/contexts/AuthContext";
 // import { db } from "@/db/database";
 // import Header from "@/components/layout/Header";
@@ -19,6 +18,7 @@
 //   email: string;
 //   address: string;
 // }
+
 // const defaultForm: CustomerForm = {
 //   name: "",
 //   phone: "",
@@ -64,6 +64,7 @@
 //     setForm(defaultForm);
 //     setShowModal(true);
 //   };
+
 //   const openEdit = (c: Customer) => {
 //     setEditing(c);
 //     setForm({
@@ -118,7 +119,6 @@
 //       setShowModal(false);
 //       load();
 //     } catch (err: any) {
-//       // Fixed: Reconstructed the missing catch handler block to resolve compiler breaks
 //       showError(err.message || "An error occurred while saving.");
 //     } finally {
 //       setSaving(false);
@@ -134,27 +134,37 @@
 //   };
 
 //   return (
-//     <div>
+//     <div className="min-h-screen bg-pos-bg">
 //       <Header
 //         title="Customers"
 //         subtitle={`${customers.length} registered customers`}
 //         actions={
-//           <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
+//           <Button
+//             icon={<Plus size={16} />}
+//             size="sm"
+//             onClick={openCreate}
+//             className="w-full sm:w-auto"
+//           >
 //             Add Customer
 //           </Button>
 //         }
 //       />
-//       <div className="p-6 space-y-4">
-//         <Input
-//           placeholder="Search customers..."
-//           value={search}
-//           onChange={(e) => setSearch(e.target.value)}
-//           leftIcon={<Search size={15} />}
-//           className="max-w-xs"
-//         />
 
+//       <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
+//         {/* Search controls */}
+//         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+//           <Input
+//             placeholder="Search customers..."
+//             value={search}
+//             onChange={(e) => setSearch(e.target.value)}
+//             leftIcon={<Search size={15} />}
+//             className="w-full sm:max-w-xs"
+//           />
+//         </div>
+
+//         {/* Empty State */}
 //         {filtered.length === 0 ? (
-//           <div className="flex flex-col items-center justify-center py-24 text-center">
+//           <div className="flex flex-col items-center justify-center py-16 sm:py-24 text-center border border-dashed border-pos-border rounded-xl">
 //             <Users size={48} className="text-pos-muted mb-4 opacity-40" />
 //             <h3 className="text-pos-text font-semibold mb-2">
 //               No customers yet
@@ -164,82 +174,176 @@
 //             </Button>
 //           </div>
 //         ) : (
-//           <div className="bg-pos-card border border-pos-border rounded-xl overflow-hidden">
-//             <table className="w-full text-sm">
-//               <thead>
-//                 <tr className="border-b border-pos-border">
-//                   {[
-//                     "Customer",
-//                     "Phone",
-//                     "Total Spent",
-//                     "Visits",
-//                     "Loyalty Points",
-//                     "Since",
-//                     "",
-//                   ].map((h) => (
-//                     <th
-//                       key={h}
-//                       className="text-left px-4 py-3 text-xs font-medium text-pos-muted uppercase tracking-wider"
-//                     >
-//                       {h}
-//                     </th>
-//                   ))}
-//                 </tr>
-//               </thead>
-//               <tbody className="divide-y divide-pos-border">
-//                 {filtered.map((c) => (
-//                   <tr
-//                     key={c.id}
-//                     className="hover:bg-pos-hover transition-colors"
-//                   >
-//                     <td className="px-4 py-3">
-//                       <div className="flex items-center gap-3">
-//                         <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-semibold text-sm shrink-0">
-//                           {c.name.slice(0, 1).toUpperCase()}
-//                         </div>
-//                         <div>
-//                           <p className="font-medium text-pos-text">{c.name}</p>
-//                           {c.email && (
-//                             <p className="text-xs text-pos-muted">{c.email}</p>
-//                           )}
-//                         </div>
+//           <>
+//             {/* Mobile View: Cards (< 768px) */}
+//             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:hidden">
+//               {filtered.map((c) => (
+//                 <div
+//                   key={c.id}
+//                   className="bg-pos-card border border-pos-border rounded-xl p-4 flex flex-col justify-between space-y-3 shadow-sm"
+//                 >
+//                   <div className="flex items-start justify-between gap-3">
+//                     <div className="flex items-center gap-3 min-w-0">
+//                       <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-semibold text-sm shrink-0">
+//                         {c.name.slice(0, 1).toUpperCase()}
 //                       </div>
-//                     </td>
-//                     <td className="px-4 py-3 text-pos-muted">{c.phone}</td>
-//                     <td className="px-4 py-3 font-semibold text-pos-text">
-//                       {formatCurrency(c.totalSpent)}
-//                     </td>
-//                     <td className="px-4 py-3 text-pos-muted">{c.visitCount}</td>
-//                     <td className="px-4 py-3">
-//                       <span className="flex items-center gap-1 text-amber-400 font-medium">
-//                         <Star size={12} />
+//                       <div className="min-w-0">
+//                         <p className="font-medium text-pos-text truncate">
+//                           {c.name}
+//                         </p>
+//                         {c.email && (
+//                           <p className="text-xs text-pos-muted truncate">
+//                             {c.email}
+//                           </p>
+//                         )}
+//                         <p className="text-xs text-pos-muted mt-0.5">
+//                           {c.phone}
+//                         </p>
+//                       </div>
+//                     </div>
+//                     <div className="flex gap-1 shrink-0">
+//                       <button
+//                         onClick={() => openEdit(c)}
+//                         className="p-2 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+//                         aria-label="Edit customer"
+//                       >
+//                         <Pencil size={16} />
+//                       </button>
+//                       <button
+//                         onClick={() => deleteCustomer(c)}
+//                         className="p-2 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+//                         aria-label="Delete customer"
+//                       >
+//                         <Trash2 size={16} />
+//                       </button>
+//                     </div>
+//                   </div>
+
+//                   <div className="grid grid-cols-3 gap-2 pt-3 border-t border-pos-border text-xs">
+//                     <div>
+//                       <span className="text-pos-muted block text-[10px] uppercase tracking-wider font-medium">
+//                         Spent
+//                       </span>
+//                       <span className="font-semibold text-pos-text">
+//                         {formatCurrency(c.totalSpent)}
+//                       </span>
+//                     </div>
+//                     <div>
+//                       <span className="text-pos-muted block text-[10px] uppercase tracking-wider font-medium">
+//                         Visits
+//                       </span>
+//                       <span className="text-pos-text font-medium">
+//                         {c.visitCount}
+//                       </span>
+//                     </div>
+//                     <div>
+//                       <span className="text-pos-muted block text-[10px] uppercase tracking-wider font-medium">
+//                         Points
+//                       </span>
+//                       <span className="inline-flex items-center gap-1 text-amber-400 font-medium">
+//                         <Star size={11} />
 //                         {c.loyaltyPoints}
 //                       </span>
-//                     </td>
-//                     <td className="px-4 py-3 text-pos-muted text-xs">
-//                       {formatDateShort(c.createdAt)}
-//                     </td>
-//                     <td className="px-4 py-3">
-//                       <div className="flex gap-1 justify-end">
-//                         <button
-//                           onClick={() => openEdit(c)}
-//                           className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+//                     </div>
+//                   </div>
+
+//                   <div className="text-[11px] text-pos-muted text-right pt-1">
+//                     Joined {formatDateShort(c.createdAt)}
+//                   </div>
+//                 </div>
+//               ))}
+//             </div>
+
+//             {/* Tablet / Laptop / Desktop View: Full Table (>= 768px) */}
+//             <div className="hidden md:block bg-pos-card border border-pos-border rounded-xl overflow-hidden shadow-sm">
+//               <div className="overflow-x-auto">
+//                 <table className="w-full text-sm">
+//                   <thead>
+//                     <tr className="border-b border-pos-border bg-pos-bg/50">
+//                       {[
+//                         "Customer",
+//                         "Phone",
+//                         "Total Spent",
+//                         "Visits",
+//                         "Loyalty Points",
+//                         "Since",
+//                         "",
+//                       ].map((h, i) => (
+//                         <th
+//                           key={i}
+//                           className="text-left px-4 py-3 text-xs font-medium text-pos-muted uppercase tracking-wider whitespace-nowrap"
 //                         >
-//                           <Pencil size={15} />
-//                         </button>
-//                         <button
-//                           onClick={() => deleteCustomer(c)}
-//                           className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-//                         >
-//                           <Trash2 size={15} />
-//                         </button>
-//                       </div>
-//                     </td>
-//                   </tr>
-//                 ))}
-//               </tbody>
-//             </table>
-//           </div>
+//                           {h}
+//                         </th>
+//                       ))}
+//                     </tr>
+//                   </thead>
+//                   <tbody className="divide-y divide-pos-border">
+//                     {filtered.map((c) => (
+//                       <tr
+//                         key={c.id}
+//                         className="hover:bg-pos-hover transition-colors"
+//                       >
+//                         <td className="px-4 py-3 whitespace-nowrap">
+//                           <div className="flex items-center gap-3">
+//                             <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 font-semibold text-sm shrink-0">
+//                               {c.name.slice(0, 1).toUpperCase()}
+//                             </div>
+//                             <div className="min-w-0">
+//                               <p className="font-medium text-pos-text truncate">
+//                                 {c.name}
+//                               </p>
+//                               {c.email && (
+//                                 <p className="text-xs text-pos-muted truncate">
+//                                   {c.email}
+//                                 </p>
+//                               )}
+//                             </div>
+//                           </div>
+//                         </td>
+//                         <td className="px-4 py-3 text-pos-muted whitespace-nowrap">
+//                           {c.phone}
+//                         </td>
+//                         <td className="px-4 py-3 font-semibold text-pos-text whitespace-nowrap">
+//                           {formatCurrency(c.totalSpent)}
+//                         </td>
+//                         <td className="px-4 py-3 text-pos-muted whitespace-nowrap">
+//                           {c.visitCount}
+//                         </td>
+//                         <td className="px-4 py-3 whitespace-nowrap">
+//                           <span className="flex items-center gap-1 text-amber-400 font-medium">
+//                             <Star size={12} />
+//                             {c.loyaltyPoints}
+//                           </span>
+//                         </td>
+//                         <td className="px-4 py-3 text-pos-muted text-xs whitespace-nowrap">
+//                           {formatDateShort(c.createdAt)}
+//                         </td>
+//                         <td className="px-4 py-3 whitespace-nowrap text-right">
+//                           <div className="flex gap-1 justify-end">
+//                             <button
+//                               onClick={() => openEdit(c)}
+//                               className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+//                               aria-label="Edit customer"
+//                             >
+//                               <Pencil size={15} />
+//                             </button>
+//                             <button
+//                               onClick={() => deleteCustomer(c)}
+//                               className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+//                               aria-label="Delete customer"
+//                             >
+//                               <Trash2 size={15} />
+//                             </button>
+//                           </div>
+//                         </td>
+//                       </tr>
+//                     ))}
+//                   </tbody>
+//                 </table>
+//               </div>
+//             </div>
+//           </>
 //         )}
 //       </div>
 
@@ -249,11 +353,19 @@
 //         title={editing ? "Edit Customer" : "Add Customer"}
 //         size="sm"
 //         footer={
-//           <div className="flex gap-3 justify-end">
-//             <Button variant="outline" onClick={() => setShowModal(false)}>
+//           <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 justify-end w-full">
+//             <Button
+//               variant="outline"
+//               onClick={() => setShowModal(false)}
+//               className="w-full sm:w-auto"
+//             >
 //               Cancel
 //             </Button>
-//             <Button onClick={handleSave} loading={saving}>
+//             <Button
+//               onClick={handleSave}
+//               loading={saving}
+//               className="w-full sm:w-auto"
+//             >
 //               Save
 //             </Button>
 //           </div>
@@ -326,6 +438,11 @@ export default function CustomersPage() {
   const { outletSession } = useAuth();
   const outlet = outletSession!.outlet;
   const { success, error: showError } = useToast();
+
+  // Check if staff has manager role
+  const role = outletSession?.staff?.role ?? "staff";
+  const isManager = role === "manager";
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -362,6 +479,10 @@ export default function CustomersPage() {
   };
 
   const openEdit = (c: Customer) => {
+    if (!isManager) {
+      showError("Only managers are authorized to edit customer details.");
+      return;
+    }
     setEditing(c);
     setForm({
       name: c.name,
@@ -373,6 +494,10 @@ export default function CustomersPage() {
   };
 
   const handleSave = async () => {
+    if (editing && !isManager) {
+      showError("Only managers are authorized to edit customer details.");
+      return;
+    }
     if (!form.name || !form.phone) {
       showError("Name and phone are required.");
       return;
@@ -422,6 +547,10 @@ export default function CustomersPage() {
   };
 
   const deleteCustomer = async (c: Customer) => {
+    if (!isManager) {
+      showError("Only managers are authorized to delete customers.");
+      return;
+    }
     if (!confirm(`Delete "${c.name}"?`)) return;
     await db.customers.delete(c.id);
     await syncRecord("customers", c.id, "delete");
@@ -497,22 +626,24 @@ export default function CustomersPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        onClick={() => openEdit(c)}
-                        className="p-2 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
-                        aria-label="Edit customer"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => deleteCustomer(c)}
-                        className="p-2 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        aria-label="Delete customer"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    {isManager && (
+                      <div className="flex gap-1 shrink-0">
+                        <button
+                          onClick={() => openEdit(c)}
+                          className="p-2 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+                          aria-label="Edit customer"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => deleteCustomer(c)}
+                          className="p-2 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          aria-label="Delete customer"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 pt-3 border-t border-pos-border text-xs">
@@ -563,7 +694,7 @@ export default function CustomersPage() {
                         "Visits",
                         "Loyalty Points",
                         "Since",
-                        "",
+                        ...(isManager ? [""] : []),
                       ].map((h, i) => (
                         <th
                           key={i}
@@ -615,24 +746,26 @@ export default function CustomersPage() {
                         <td className="px-4 py-3 text-pos-muted text-xs whitespace-nowrap">
                           {formatDateShort(c.createdAt)}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right">
-                          <div className="flex gap-1 justify-end">
-                            <button
-                              onClick={() => openEdit(c)}
-                              className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
-                              aria-label="Edit customer"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                            <button
-                              onClick={() => deleteCustomer(c)}
-                              className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                              aria-label="Delete customer"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        </td>
+                        {isManager && (
+                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => openEdit(c)}
+                                className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+                                aria-label="Edit customer"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                onClick={() => deleteCustomer(c)}
+                                className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                aria-label="Delete customer"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

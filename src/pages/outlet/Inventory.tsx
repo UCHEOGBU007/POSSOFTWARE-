@@ -59,6 +59,8 @@
 // export default function InventoryPage() {
 //   const { outletSession } = useAuth();
 //   const outlet = outletSession!.outlet;
+//   const isManager = outletSession?.staff?.role === "manager";
+
 //   const { success, error: showError } = useToast();
 //   const [products, setProducts] = useState<Product[]>([]);
 //   const [categories, setCategories] = useState<Category[]>([]);
@@ -111,6 +113,10 @@
 //   };
 
 //   const openCreate = () => {
+//     if (!isManager) {
+//       showError("Only managers can add products.");
+//       return;
+//     }
 //     setEditingProduct(null);
 //     setForm(defaultForm);
 //     resetImageState();
@@ -118,6 +124,10 @@
 //   };
 
 //   const openEdit = (p: Product) => {
+//     if (!isManager) {
+//       showError("Only managers can edit products.");
+//       return;
+//     }
 //     setEditingProduct(p);
 //     setForm({
 //       name: p.name,
@@ -195,6 +205,11 @@
 //   };
 
 //   const handleSave = async () => {
+//     if (!isManager) {
+//       showError("Only managers can add or edit products.");
+//       return;
+//     }
+
 //     if (!form.name || !form.sku || !form.price) {
 //       showError("Name, SKU and price are required.");
 //       return;
@@ -308,6 +323,10 @@
 //   };
 
 //   const deleteProduct = async (p: Product) => {
+//     if (!isManager) {
+//       showError("Only managers can delete products.");
+//       return;
+//     }
 //     if (!confirm(`Delete "${p.name}"?`)) return;
 //     await db.products.delete(p.id);
 //     success("Product deleted.");
@@ -345,9 +364,11 @@
 //             >
 //               Categories
 //             </Button>
-//             <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
-//               Add Product
-//             </Button>
+//             {isManager && (
+//               <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
+//                 Add Product
+//               </Button>
+//             )}
 //           </div>
 //         }
 //       />
@@ -380,9 +401,11 @@
 //             <h3 className="text-pos-text font-semibold mb-2">
 //               No products found
 //             </h3>
-//             <Button icon={<Plus size={16} />} onClick={openCreate}>
-//               Add First Product
-//             </Button>
+//             {isManager && (
+//               <Button icon={<Plus size={16} />} onClick={openCreate}>
+//                 Add First Product
+//               </Button>
+//             )}
 //           </div>
 //         ) : (
 //           <div className="bg-pos-card border border-pos-border rounded-xl overflow-x-auto">
@@ -492,18 +515,24 @@
 //                           >
 //                             <ArrowUpCircle size={15} />
 //                           </button>
-//                           <button
-//                             onClick={() => openEdit(p)}
-//                             className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
-//                           >
-//                             <Pencil size={15} />
-//                           </button>
-//                           <button
-//                             onClick={() => deleteProduct(p)}
-//                             className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-//                           >
-//                             <Trash2 size={15} />
-//                           </button>
+//                           {isManager && (
+//                             <>
+//                               <button
+//                                 onClick={() => openEdit(p)}
+//                                 className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
+//                                 title="Edit product"
+//                               >
+//                                 <Pencil size={15} />
+//                               </button>
+//                               <button
+//                                 onClick={() => deleteProduct(p)}
+//                                 className="p-1.5 rounded-lg text-pos-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+//                                 title="Delete product"
+//                               >
+//                                 <Trash2 size={15} />
+//                               </button>
+//                             </>
+//                           )}
 //                         </div>
 //                       </td>
 //                     </tr>
@@ -1066,6 +1095,10 @@ export default function InventoryPage() {
   };
 
   const handleStockAdj = async () => {
+    if (!isManager) {
+      showError("Only managers can adjust stock.");
+      return;
+    }
     if (!showStockModal || !stockAdj.qty) return;
     const qty = parseInt(stockAdj.qty);
     if (isNaN(qty) || qty <= 0) {
@@ -1120,6 +1153,10 @@ export default function InventoryPage() {
   };
 
   const addCategory = async () => {
+    if (!isManager) {
+      showError("Only managers can add categories.");
+      return;
+    }
     if (!newCatName.trim()) return;
     const category = {
       id: generateId(),
@@ -1136,6 +1173,16 @@ export default function InventoryPage() {
     success("Category added.");
   };
 
+  const deleteCategory = async (catId: string) => {
+    if (!isManager) {
+      showError("Only managers can delete categories.");
+      return;
+    }
+    await db.categories.delete(catId);
+    load();
+    success("Category deleted.");
+  };
+
   return (
     <div>
       <Header
@@ -1143,17 +1190,23 @@ export default function InventoryPage() {
         subtitle={`${products.length} products`}
         actions={
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowCatModal(true)}
-            >
-              Categories
-            </Button>
             {isManager && (
-              <Button icon={<Plus size={16} />} size="sm" onClick={openCreate}>
-                Add Product
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCatModal(true)}
+                >
+                  Categories
+                </Button>
+                <Button
+                  icon={<Plus size={16} />}
+                  size="sm"
+                  onClick={openCreate}
+                >
+                  Add Product
+                </Button>
+              </>
             )}
           </div>
         }
@@ -1294,15 +1347,15 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
-                          <button
-                            onClick={() => setShowStockModal(p)}
-                            className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-                            title="Adjust stock"
-                          >
-                            <ArrowUpCircle size={15} />
-                          </button>
                           {isManager && (
                             <>
+                              <button
+                                onClick={() => setShowStockModal(p)}
+                                className="p-1.5 rounded-lg text-pos-muted hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                                title="Adjust stock"
+                              >
+                                <ArrowUpCircle size={15} />
+                              </button>
                               <button
                                 onClick={() => openEdit(p)}
                                 className="p-1.5 rounded-lg text-pos-muted hover:text-pos-text hover:bg-pos-hover transition-colors"
@@ -1582,10 +1635,7 @@ export default function InventoryPage() {
               >
                 <span className="text-sm text-pos-text">{c.name}</span>
                 <button
-                  onClick={async () => {
-                    await db.categories.delete(c.id);
-                    load();
-                  }}
+                  onClick={() => deleteCategory(c.id)}
                   className="text-pos-muted hover:text-red-400 transition-colors"
                 >
                   <Trash2 size={14} />

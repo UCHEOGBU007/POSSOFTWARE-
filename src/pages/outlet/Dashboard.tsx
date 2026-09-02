@@ -28,34 +28,8 @@ export default function OutletDashboard() {
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
 
-  // useEffect(() => {
-  //   const load = async () => {
-  //     const todayStart = getTodayStart();
-  //     const sales = await db.sales
-  //       .where("outletId")
-  //       .equals(outlet.id)
-  //       .filter((s) => s.createdAt >= todayStart && s.status === "completed")
-  //       .toArray();
-  //     setTodaySales(
-  //       sales.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-  //     );
-
-  //     const products = await db.products
-  //       .where({ outletId: outlet.id, isActive: 1 })
-  //       .toArray();
-  //     setTotalProducts(products.length);
-  //     setLowStockProducts(
-  //       products.filter((p) => p.trackStock && p.stock <= p.lowStockAlert),
-  //     );
-
-  //     const custs = await db.customers
-  //       .where("outletId")
-  //       .equals(outlet.id)
-  //       .count();
-  //     setTotalCustomers(custs);
-  //   };
-  //   load();
-  // }, [outlet.id]);
+  const role = outletSession?.staff?.role ?? "cashier"; // Default to "cashier" if role is undefined
+  const isCashier = role === "cashier";
 
   useEffect(() => {
     const load = async () => {
@@ -146,13 +120,13 @@ export default function OutletDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
             label="Today's Revenue"
-            value={formatCurrency(todayRevenue)}
+            value={isCashier ? "******" : formatCurrency(todayRevenue)}
             icon={<TrendingUp size={20} />}
             iconColor="text-emerald-400"
           />
           <StatCard
             label="Today's Sales"
-            value={todaySales.length.toString()}
+            value={isCashier ? "******" : todaySales.length.toString()}
             icon={<ShoppingCart size={20} />}
             iconColor="text-blue-400"
           />
