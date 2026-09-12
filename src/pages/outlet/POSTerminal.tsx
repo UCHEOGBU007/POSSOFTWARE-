@@ -1778,16 +1778,18 @@ export default function POSTerminal() {
         {pos.lastSale && (
           <div className="space-y-4" id="receipt-content">
             <div className="text-center">
-              {outlet.logo && (
+              {outlet.logo ? (
                 <img
                   src={outlet.logo}
                   alt={`${outlet.name} logo`}
                   className="mx-auto mb-2 h-14 max-w-36 object-contain"
                 />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
+                  <ShoppingCart size={22} className="text-emerald-400" />
+                </div>
               )}
-              <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
-                <ShoppingCart size={22} className="text-emerald-400" />
-              </div>
+
               <p className="font-bold text-pos-text text-lg">{outlet.name}</p>
               <p className="text-xs text-pos-muted">{outlet.address}</p>
               <p className="text-sm text-pos-muted">Sale Receipt</p>

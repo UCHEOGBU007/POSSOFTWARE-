@@ -266,7 +266,7 @@ export default function OutletLogin() {
 
       {/* Footer copyright notice */}
       <p className="text-center text-[11px] text-pos-muted">
-        Enterprise POS Framework © 2026
+        PT Tech Solusions Group © 2026
       </p>
     </div>
   );

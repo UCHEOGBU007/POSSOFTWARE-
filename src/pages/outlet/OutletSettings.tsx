@@ -86,7 +86,7 @@ export default function OutletSettings() {
                 setSyncing(true);
                 try {
                   await syncPendingData();
-                  success("Pending local records synced to Supabase.");
+                  success("Pending local records synced to database.");
                 } catch (err: any) {
                   showError(err.message || "Failed to sync data.");
                 } finally {
@@ -117,9 +117,13 @@ export default function OutletSettings() {
             <h3 className="font-semibold text-pos-text">Sync Status</h3>
           </div>
           <p className="text-sm text-pos-muted">
-            Supabase sync is manually triggered. Connect to the internet and use
+            Database sync is manually triggered. Connect to the internet and use
             the sync feature to push data to the cloud. All unsynced records are
-            marked <span className="text-amber-400 font-medium">pending</span>.
+            marked{" "}
+            <span className="text-amber-400 font-medium">
+              pending in local{" "}
+            </span>
+            .
           </p>
         </div>
       </div>
